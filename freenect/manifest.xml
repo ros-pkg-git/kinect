@@ -1,0 +1,14 @@
+<package>
+  <description brief="freenect">
+
+     freenect
+
+  </description>
+  <author>Tully Foote</author>
+  <license>BSD</license>
+  <review status="unreviewed" notes=""/>
+  <url>http://ros.org/wiki/freenect</url>
+
+</package>
+
+
