@@ -1,0 +1,12 @@
+Create kinect.rosinstall
+"""
+- git:
+    local-name: kinect
+    uri: https://github.com/ros-pkg-git/kinect.git
+    version: master
+"""
+
+rosintall ~/kinect_dev /opt/ros/unstable kinect.rosinstall
+
+For now call `git submodule update --init --recursive` to pull in libfreenect
+
