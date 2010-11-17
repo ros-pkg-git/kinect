@@ -42,9 +42,8 @@
 #define KINECT_NODE_KINECT_H_
 
 #include <libusb.h>
-#include <algorithm>
+#include <boost/thread/mutex.hpp>
 
-#include <camera_info_manager/camera_info_manager.h>
 // ROS messages
 #include <sensor_msgs/PointCloud.h>
 #include <sensor_msgs/PointCloud2.h>
@@ -53,7 +52,7 @@
 
 #include <ros/ros.h>
 #include <ros/package.h>
-#include <boost/thread/mutex.hpp>
+#include <camera_info_manager/camera_info_manager.h>
 #include <image_transport/image_transport.h>
 
 extern "C" 
@@ -66,11 +65,6 @@ namespace kinect_camera
   class KinectDriver
   {
     public:
-      std::string cam_name_;
-      std::string cam_info_url_;
-
-      /** \brief Camera info data. Holds camera parameters. */
-      sensor_msgs::CameraInfo cam_info_;
       /** \brief Camera info manager object. */
       CameraInfoManager *cam_info_manager_;
 
@@ -117,6 +111,7 @@ namespace kinect_camera
 
       /** \brief Convert an index from the depth image to a 3D point and return
         * its XYZ coordinates.
+        * \param buf the depth image
         * \param u index in the depth image
         * \param v index in the depth image
         * \param x the resultant x coordinate of the point
@@ -124,9 +119,9 @@ namespace kinect_camera
         * \param z the resultant z coordinate of the point
         */
       inline bool
-        getPoint3D (int u, int v, double &x, double &y, double &z)
+        getPoint3D (freenect_depth *buf, int u, int v, float &x, float &y, float &z)
       {
-        int reading = depth_buf_[v * width_ + u];
+        int reading = buf[v * width_ + u];
 
         if (reading  >= 2048 || reading <= 0) 
           return (false);
@@ -156,14 +151,6 @@ namespace kinect_camera
       /** \brief Internal node handle copy. */
       ros::NodeHandle nh_;
 
-      /** \brief Buffer that holds the depth values. */
-      uint16_t *depth_buf_;
-      /** \brief Buffer that holds the RGB values. */
-      uint8_t  *rgb_buf_;
-
-      bool depthSent_;
-      bool rgbSent_; 
-
       /** \brief ROS publishers. */
       image_transport::CameraPublisher pub_image_;
       ros::Publisher pub_points_, pub_points2_;
@@ -172,19 +159,34 @@ namespace kinect_camera
       int width_;
       int height_;
       double max_range_;
-      std::string kinect_RGB_frame_;
-      std::string kinect_depth_frame_;
 
       /** \brief The horizontal field of view (in radians). */
-      double horizontal_fov_;
+      const static double horizontal_fov_ = 57.0 * M_PI / 180.0;
       /** \brief The vertical field of view (in radians). */
-      double vertical_fov_;
+      const static double vertical_fov_   = 43.0 * M_PI / 180.0;
       
       /** \brief Freenect context structure. */
       freenect_context *f_ctx_;
 
       /** \brief Freenect device structure. */
       freenect_device *f_dev_;
+    
+      /** \brief Image data. */
+      sensor_msgs::Image image_;
+      /** \brief PointCloud data. */
+      sensor_msgs::PointCloud cloud_;
+      /** \brief PointCloud2 data. */
+      sensor_msgs::PointCloud2 cloud2_;
+      /** \brief Camera info data. */
+      sensor_msgs::CameraInfo cam_info_;
+
+      bool depth_sent_;
+      bool rgb_sent_; 
+
+      /** \brief Buffer that holds the depth values. */
+      //uint16_t *depth_buf_;
+      /** \brief Buffer that holds the RGB values. */
+      //uint8_t  *rgb_buf_;
   };
 
   KinectDriver* kinect_driver_global;

@@ -42,47 +42,76 @@
 
 
 /** \brief Constructor */
-kinect_camera::KinectDriver::KinectDriver (const ros::NodeHandle &nh) : nh_ (nh), width_ (640), height_ (480), max_range_ (5.0), kinect_RGB_frame_ ("/kinect_rgb"), kinect_depth_frame_ ("/kinect_depth")
+kinect_camera::KinectDriver::KinectDriver (const ros::NodeHandle &nh) : nh_ (nh), width_ (640), height_ (480), max_range_ (5.0), depth_sent_ (false), rgb_sent_ (false)
 {
   cam_info_manager_ = new CameraInfoManager (nh_);
 
-  // Kinect constants
-  double horizontal_fov = 57.0;
-	double vertical_fov   = 43.0;
-	double deg2rad = M_PI / 180.0;
-
-	horizontal_fov_ = horizontal_fov * deg2rad;
-	vertical_fov_   = vertical_fov   * deg2rad;
-
-  rgb_buf_   = NULL;
-  depth_buf_ = NULL;
-
-  depthSent_ = false;
-  rgbSent_ = false; 
-
+  // Workaround for libfreenect's C issues
   kinect_driver_global = this;
 
-  // Read in global parameters
-  nh_.getParam ("kinect_rgb_frame", kinect_RGB_frame_);
-  nh_.getParam ("kinect_depth_frame", kinect_depth_frame_);
   nh_.getParam ("max_range", max_range_);
   nh_.getParam ("width", width_);
   nh_.getParam ("height", height_);
 
-  nh_.param ("camera_name", cam_name_, std::string("camera"));
-  nh_.param ("camera_info_url",cam_info_url_,std::string("auto"));
-  if (cam_info_url_.compare ("auto") == 0) 
-    cam_info_url_ = std::string ("file://")+ros::package::getPath (ROS_PACKAGE_NAME)+std::string("/info/calibration.yaml");
-  ROS_INFO ("Calibration URL: %s", cam_info_url_.c_str ());
+  // Assemble the point cloud data
+  std::string kinect_depth_frame ("/kinect_depth");
+  nh_.getParam ("kinect_depth_frame", kinect_depth_frame);
+  cloud_.header.frame_id = cloud2_.header.frame_id = kinect_depth_frame;
+  cloud_.channels.resize (1);
+  cloud_.channels[0].name = "rgb";
+  cloud_.channels[0].values.resize (0);
 
-  if (cam_info_manager_->validateURL (cam_info_url_)) 
-    cam_info_manager_->loadCameraInfo (cam_info_url_);
+  cloud2_.height = height_; cloud2_.width = width_;
+  cloud2_.fields.resize (4);
+  cloud2_.fields[0].name = "x";
+  cloud2_.fields[1].name = "y";
+  cloud2_.fields[2].name = "z";
+  cloud2_.fields[3].name = "rgb";
+
+  // Set all the fields types accordingly
+  int offset = 0;
+  for (size_t s = 0; s < cloud2_.fields.size (); ++s, offset += 4)
+  {
+    cloud2_.fields[s].offset   = offset;
+    cloud2_.fields[s].count    = 1;
+    cloud2_.fields[s].datatype = sensor_msgs::PointField::FLOAT32;
+  }
+
+  cloud2_.point_step = offset;
+  cloud2_.row_step   = cloud2_.point_step * cloud2_.width;
+  cloud2_.data.resize (cloud2_.row_step   * cloud2_.height);
+  cloud2_.is_dense = true;
+
+
+  // Assemble the image data
+  std::string kinect_RGB_frame ("/kinect_rgb");
+  nh_.getParam ("kinect_rgb_frame", kinect_RGB_frame);
+  image_.header.frame_id = kinect_RGB_frame;
+
+  image_.height = height_; image_.width = width_;
+  image_.encoding = "rgb8";
+  image_.step = width_ * 3;
+  image_.data.resize (width_ * height_ * 3);
+  cam_info_.height = image_.height; cam_info_.width = image_.width;
+  cam_info_.header.frame_id = image_.header.frame_id; 
+
+  // Read calibration parameters from disk
+  std::string cam_name ("camera"), cam_info_url ("auto");
+  nh_.getParam ("camera_name", cam_name);
+  nh_.getParam ("camera_info_url", cam_info_url);
+
+  if (cam_info_url.compare ("auto") == 0) 
+    cam_info_url = std::string ("file://")+ros::package::getPath (ROS_PACKAGE_NAME)+std::string("/info/calibration.yaml");
+  ROS_INFO ("[KinectDriver] Calibration URL: %s", cam_info_url.c_str ());
+
+  if (cam_info_manager_->validateURL (cam_info_url)) 
+    cam_info_manager_->loadCameraInfo (cam_info_url);
   else
   {
-    ROS_ERROR ("Invalid Calibration URL");
+    ROS_ERROR ("[KinectDriver] Invalid Calibration URL");
     ROS_BREAK ();
   }
-  cam_info_manager_->setCameraName (cam_name_);
+  cam_info_manager_->setCameraName (cam_name);
   cam_info_ = cam_info_manager_->getCameraInfo ();
 
   // Publishers and subscribers
@@ -98,7 +127,7 @@ kinect_camera::KinectDriver::KinectDriver (const ros::NodeHandle &nh) : nh_ (nh)
 bool
   kinect_camera::KinectDriver::init (int index)
 {
-  // Initilize the USB 
+  // Initialize the USB 
   if (freenect_init (&f_ctx_, NULL) < 0)
   {
     ROS_ERROR ("[KinectDriver::init] Initialization failed!");
@@ -168,13 +197,61 @@ void
 {
   boost::mutex::scoped_lock lock (buffer_mutex_);
 
-  depthSent_ = false;
+  depth_sent_ = false;
 
-  if (depth_buf_) delete depth_buf_;
-  depth_buf_ = new uint16_t[width_*height_];
-  memcpy(depth_buf_, buf, width_*height_*sizeof(uint16_t));
+  // Convert the data to ROS format
+  if (pub_points_.getNumSubscribers () > 0)
+  {
+    cloud_.points.resize (width_ * height_);
+    int nrp = 0;
+    // Assemble an ancient sensor_msgs/PointCloud message
+    for (int u = 0; u < width_; u += 2) 
+    {
+      for (int v = 0; v < height_; v += 2)
+      {
+        if (!getPoint3D (buf, u, v, cloud_.points[nrp].x, cloud_.points[nrp].y, cloud_.points[nrp].z))
+          continue;
 
-  if (rgb_buf_ && !rgbSent_) publish();
+        nrp++;
+      }
+    }
+    // Resize to the correct number of points
+    cloud_.points.resize (nrp);
+  }
+  if (pub_points2_.getNumSubscribers () > 0)
+  {
+    float bad_point = std::numeric_limits<float>::quiet_NaN ();
+    // Assemble an awesome sensor_msgs/PointCloud2 message
+    for (int u = 0; u < width_; u += 2) 
+    {
+      for (int v = 0; v < height_; v += 2)
+      {
+        float *pstep = (float*)&cloud2_.data[(v * width_ + u) * cloud2_.point_step];
+        int d = 0;
+
+        float x, y, z;
+        if (getPoint3D (buf, u, v, x, y, z))
+        {
+          pstep[d++] = x;
+          pstep[d++] = y;
+          pstep[d++] = z;
+          // Fill in RGB
+          pstep[d++] = 0;
+        }
+        else
+        {
+          pstep[d++] = bad_point;
+          pstep[d++] = bad_point;
+          pstep[d++] = bad_point;
+          // Fill in RGB
+          pstep[d++] = 0;
+        }
+      }
+    }
+  }
+  // Publish only if we have an rgb image too
+  if (/*rgb_buf_ && */!rgb_sent_) 
+    publish ();
 }
 
 /** \brief RGB callback. Virtual.
@@ -187,79 +264,41 @@ void
 {
   boost::mutex::scoped_lock lock (buffer_mutex_);
 
-  rgbSent_ = false;
-  if (rgb_buf_) delete rgb_buf_;
-  rgb_buf_ = new uint8_t[width_*height_*3];
-  memcpy(rgb_buf_, rgb, width_*height_*3);
+  rgb_sent_ = false;
 
-  if (depth_buf_ && !depthSent_) publish();
+  if (pub_image_.getNumSubscribers () > 0)
+  {
+    // Copy the image data
+    memcpy (&image_.data[0], &rgb[0], width_ * height_ * 3);
 
+    // Check the camera info
+    if (cam_info_.height != (size_t)image_.height || cam_info_.width != (size_t)image_.width)
+      ROS_DEBUG_THROTTLE (60, "[KinectDriver::rgbCb] Uncalibrated Camera");
+  }
+
+  // Publish only if we have a depth image too
+  if (/*depth_buf_ && */!depth_sent_) 
+    publish ();
 }
 
 void 
   kinect_camera::KinectDriver::publish ()
 {
+  // Get the current time
   ros::Time time = ros::Time::now ();
+	cloud_.header.stamp = cloud2_.header.stamp = time;
+  image_.header.stamp = cam_info_.header.stamp = time;
 
-  // **** publish point cloud
-
-	sensor_msgs::PointCloud cloud;
-	sensor_msgs::PointCloud2 cloud2;
-	cloud.header.stamp = cloud2.header.stamp = time;
-	cloud.header.frame_id = cloud2.header.frame_id = kinect_depth_frame_;
-
-	for (int u = 0; u < width_; u += 2) 
-  {
-    for (int v = 0; v < height_; v += 2)
-    {
-      double x, y, z;
-      if (!getPoint3D (u, v, x, y, z))
-        continue;
-
-      geometry_msgs::Point32 point;
-      point.x = x;
-      point.y = y;
-      point.z = z;
-      cloud.points.push_back(point);
-
-      /*pcl::PointXYZ pt;
-      pt.x = wx; pt.y = wy; pt.z = wz;
-      pcl_cloud.points.push_back (pt);*/
-    }
-  }
-  //pcl::toROSMsg (pcl_cloud, cloud2);
-
-  // **** publish RGB Image
-
+  // Publish RGB Image
   if (pub_image_.getNumSubscribers () > 0)
-  {
-    // Assemble the image
-    sensor_msgs::Image image;
-    image.header.stamp = time;
-    image.header.frame_id = kinect_RGB_frame_;
-    image.height = height_; image.width = width_;
-    image.encoding = "rgb8";
-    image.step = width_ * 3;
-    image.data.reserve (width_*height_*3);
-    
-    copy (rgb_buf_, rgb_buf_ + width_ * height_ * 3, back_inserter (image.data));
+    pub_image_.publish (image_, cam_info_); 
 
-    // Assemble the camera info
-    if (cam_info_.height != (unsigned int)image.height || cam_info_.width != (unsigned int)image.width)
-      ROS_DEBUG_THROTTLE (60, "Uncalibrated Camera");
-    cam_info_.header.stamp = image.header.stamp;
-    cam_info_.height = image.height; cam_info_.width = image.width;
-    cam_info_.header.frame_id = image.header.frame_id;
+  // Publish the PointCloud messages
+  if (pub_points_.getNumSubscribers () > 0)
+    pub_points_.publish  (cloud_);
+  if (pub_points2_.getNumSubscribers () > 0)
+    pub_points2_.publish (cloud2_);
 
-    // Publish
-	  pub_image_.publish (image, cam_info_); 
-  }
-
-  // **** publish the messages
-
-	pub_points_.publish  (cloud);
-	pub_points2_.publish (cloud2);
-
-  rgbSent_   = true;
-  depthSent_ = true;
+  rgb_sent_   = true;
+  depth_sent_ = true;
 }

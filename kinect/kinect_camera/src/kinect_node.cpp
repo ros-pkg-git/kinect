@@ -59,8 +59,12 @@ int
     return (-1);
   k.start ();
 
+  ros::Duration r (0.0001);
   while (ros::ok () && k.ok ())
+  {
     ros::spinOnce ();
+    r.sleep ();
+  }
 
   return (0);
 }
