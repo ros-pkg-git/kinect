@@ -109,7 +109,7 @@ bool
     return (false);
   }
   ROS_DEBUG ("[KinectDriver::init] Number of devices found: %d", nr_devices);
-  if (nr_devices < index)
+  if (nr_devices <= index)
   {
     ROS_WARN ("[KinectDriver::init] Desired device index (%d) out of bounds (%d)!", index, nr_devices);
     return (false);
