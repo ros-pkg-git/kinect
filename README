@@ -6,7 +6,12 @@ Create kinect.rosinstall
     version: master
 """
 
-rosintall ~/kinect_dev /opt/ros/unstable kinect.rosinstall
+# do installation from source
+rosinstall ~/kinect_dev /opt/ros/unstable kinect.rosinstall
+. ~/kinect_dev/setup.sh
 
 For now call `git submodule update --init --recursive` to pull in libfreenect
+Patch for rosinstall coming https://code.ros.org/trac/ros/ticket/3146
 
+# Build all of kinect stack and install dependencies
+rosmake --rosdep-install kinect

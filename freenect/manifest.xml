@@ -9,6 +9,7 @@
   <review status="unreviewed" notes=""/>
   <url>http://ros.org/wiki/freenect</url>
 
+  <rosdep name="libusb1.0"/>
 </package>
 
 
