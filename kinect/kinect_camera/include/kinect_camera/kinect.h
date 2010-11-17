@@ -74,9 +74,6 @@ namespace kinect_camera
       /** \brief Camera info manager object. */
       CameraInfoManager *cam_info_manager_;
 
-      boost::mutex rgbMutex_;
-      boost::mutex depthMutex_;
-
       /** \brief Constructor */
       KinectDriver (const ros::NodeHandle &nh);
       virtual ~KinectDriver ();
@@ -94,19 +91,67 @@ namespace kinect_camera
         */
       virtual void rgbCb   (freenect_device *dev, freenect_pixel *rgb, uint32_t timestamp);
 
-      void start ();
-      void stop ();
-      bool init (int index);
-      void publish ();
 
-      /** \brief Check the current state of Freenect. */
-      inline bool ok ()
+      /** \brief Start (resume) the data acquisition process. */
+      void start ();
+      /** \brief Stop (pause) the data acquisition process. */
+      void stop ();
+
+      /** \brief Initialize a Kinect device, given an index.
+        * \param index the index of the device to initialize
+        */
+      bool init (int index);
+
+      /** \brief Check whether it's time to exit. 
+        * \return true if we're still OK, false if it's time to exit
+        */
+      inline bool 
+        ok ()
       {
         return (freenect_process_events (f_ctx_) >= 0);
       }
 
+    protected:
+      /** \brief Send the data over the network. */
+      void publish ();
+
+      /** \brief Convert an index from the depth image to a 3D point and return
+        * its XYZ coordinates.
+        * \param u index in the depth image
+        * \param v index in the depth image
+        * \param x the resultant x coordinate of the point
+        * \param y the resultant y coordinate of the point
+        * \param z the resultant z coordinate of the point
+        */
+      inline bool
+        getPoint3D (int u, int v, double &x, double &y, double &z)
+      {
+        int reading = depth_buf_[v * width_ + u];
+
+        if (reading  >= 2048 || reading <= 0) 
+          return (false);
+
+        int px = u - width_  / 2;
+        int py = v - height_ / 2;
+      
+        x = px * (horizontal_fov_ / (double)width_);
+        y = py * (vertical_fov_ / (double)height_);
+        z = 1.0;
+      
+        double range = -325.616 / ((double)reading + -1084.61);
+        
+        if (range > max_range_ || range <= 0)
+          return (false);
+
+        x *= range;
+        y *= range;
+        z *= range;
+        return (true);
+      }
+
     private:
-      boost::mutex bufferMutex_;
+      /** \brief Internal mutex. */
+      boost::mutex buffer_mutex_;
 
       /** \brief Internal node handle copy. */
       ros::NodeHandle nh_;
@@ -123,6 +168,7 @@ namespace kinect_camera
       image_transport::CameraPublisher pub_image_;
       ros::Publisher pub_points_, pub_points2_;
 
+      /** \brief Camera parameters. */
       int width_;
       int height_;
       double max_range_;

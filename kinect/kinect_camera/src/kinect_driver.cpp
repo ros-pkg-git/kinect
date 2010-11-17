@@ -83,6 +83,7 @@ kinect_camera::KinectDriver::KinectDriver (const ros::NodeHandle &nh) : nh_ (nh)
     ROS_BREAK ();
   }
   cam_info_manager_->setCameraName (cam_name_);
+  cam_info_ = cam_info_manager_->getCameraInfo ();
 
   // Publishers and subscribers
   image_transport::ImageTransport it (nh_);
@@ -91,6 +92,9 @@ kinect_camera::KinectDriver::KinectDriver (const ros::NodeHandle &nh) : nh_ (nh)
   pub_points2_ = nh_.advertise<sensor_msgs::PointCloud2>("points2", 15);
 }
 
+/** \brief Initialize a Kinect device, given an index.
+  * \param index the index of the device to initialize
+  */
 bool
   kinect_camera::KinectDriver::init (int index)
 {
@@ -130,6 +134,7 @@ bool
   return (true);
 }
 
+/** \brief Destructor */
 kinect_camera::KinectDriver::~KinectDriver ()
 {
   freenect_close_device (f_dev_);
@@ -137,22 +142,31 @@ kinect_camera::KinectDriver::~KinectDriver ()
   kinect_driver_global = NULL;
 }
 
-void kinect_camera::KinectDriver::start ()
+/** \brief Start (resume) the data acquisition process. */
+void 
+  kinect_camera::KinectDriver::start ()
 {
   freenect_start_depth (f_dev_);
   freenect_start_rgb (f_dev_);
 }
 
-void kinect_camera::KinectDriver::stop ()
+/** \brief Stop (pause) the data acquisition process. */
+void 
+  kinect_camera::KinectDriver::stop ()
 {
   freenect_stop_depth (f_dev_);
   freenect_stop_rgb (f_dev_);
 }
 
+/** \brief Depth callback. Virtual. 
+  * \param dev the Freenect device
+  * \param buf the resultant output buffer
+  * \param timestamp the time when the data was acquired
+  */
 void 
   kinect_camera::KinectDriver::depthCb (freenect_device *dev, freenect_depth *buf, uint32_t timestamp)
 {
-  bufferMutex_.lock ();
+  boost::mutex::scoped_lock lock (buffer_mutex_);
 
   depthSent_ = false;
 
@@ -161,14 +175,17 @@ void
   memcpy(depth_buf_, buf, width_*height_*sizeof(uint16_t));
 
   if (rgb_buf_ && !rgbSent_) publish();
-
-  bufferMutex_.unlock();
 }
 
+/** \brief RGB callback. Virtual.
+  * \param dev the Freenect device
+  * \param buf the resultant output buffer
+  * \param timestamp the time when the data was acquired
+  */
 void 
   kinect_camera::KinectDriver::rgbCb (freenect_device *dev, freenect_pixel *rgb, uint32_t timestamp)
 {
-  bufferMutex_.lock();
+  boost::mutex::scoped_lock lock (buffer_mutex_);
 
   rgbSent_ = false;
   if (rgb_buf_) delete rgb_buf_;
@@ -177,12 +194,12 @@ void
 
   if (depth_buf_ && !depthSent_) publish();
 
-  bufferMutex_.unlock();
 }
 
-void kinect_camera::KinectDriver::publish ()
+void 
+  kinect_camera::KinectDriver::publish ()
 {
-  ros::Time time = ros::Time::now();
+  ros::Time time = ros::Time::now ();
 
   // **** publish point cloud
 
@@ -191,69 +208,57 @@ void kinect_camera::KinectDriver::publish ()
 	cloud.header.stamp = cloud2.header.stamp = time;
 	cloud.header.frame_id = cloud2.header.frame_id = kinect_depth_frame_;
 
-	for (int x=0; x<width_; x+=2) 
-	for (int y=0; y<height_; y+=2)
+	for (int u = 0; u < width_; u += 2) 
   {
-    int index(y*width_ + x);
-    int reading = depth_buf_[index];
+    for (int v = 0; v < height_; v += 2)
+    {
+      double x, y, z;
+      if (!getPoint3D (u, v, x, y, z))
+        continue;
 
-    if (reading  >= 2048 || reading <= 0) continue;
+      geometry_msgs::Point32 point;
+      point.x = x;
+      point.y = y;
+      point.z = z;
+      cloud.points.push_back(point);
 
-    int px = x - width_/2;
-    int py = y - height_/2;
-  
-    double wx = px * (horizontal_fov_ / (double)width_);
-    double wy = py * (vertical_fov_ / (double)height_);
-    double wz = 1.0;
-  
-    double range = -325.616 / ((double)reading + -1084.61);
-    
-    if (range > max_range_ || range <= 0) 
-      continue;
-
-    wx *= range;
-    wy *= range;
-    wz *= range;
-
-	  geometry_msgs::Point32 point;
-    point.x = wx;
-    point.y = wy;
-    point.z = wz;
-  	cloud.points.push_back(point);
-
-    /*pcl::PointXYZ pt;
-    pt.x = wx; pt.y = wy; pt.z = wz;
-  	pcl_cloud.points.push_back (pt);*/
+      /*pcl::PointXYZ pt;
+      pt.x = wx; pt.y = wy; pt.z = wz;
+      pcl_cloud.points.push_back (pt);*/
+    }
   }
   //pcl::toROSMsg (pcl_cloud, cloud2);
 
   // **** publish RGB Image
 
-	sensor_msgs::Image image;
-	image.header.stamp = time;
-	image.header.frame_id = kinect_RGB_frame_;
-	image.height = height_;
-	image.width = width_;
-	image.encoding = "rgb8";
-	image.step = width_ * 3;
-	image.data.reserve(width_*height_*3);
-  
-	copy(rgb_buf_, rgb_buf_ + width_*height_*3, back_inserter(image.data));
+  if (pub_image_.getNumSubscribers () > 0)
+  {
+    // Assemble the image
+    sensor_msgs::Image image;
+    image.header.stamp = time;
+    image.header.frame_id = kinect_RGB_frame_;
+    image.height = height_; image.width = width_;
+    image.encoding = "rgb8";
+    image.step = width_ * 3;
+    image.data.reserve (width_*height_*3);
+    
+    copy (rgb_buf_, rgb_buf_ + width_ * height_ * 3, back_inserter (image.data));
 
-  // **** publish Camera Info
-  cam_info_ = cam_info_manager_->getCameraInfo ();
-  if (cam_info_.height != (unsigned int)image.height || cam_info_.width != (unsigned int)image.width)
-    ROS_DEBUG_THROTTLE (60, "Uncalibrated Camera");
-  cam_info_.header.stamp = image.header.stamp;
-  cam_info_.height = image.height;
-  cam_info_.width = image.width;
-  cam_info_.header.frame_id = image.header.frame_id;
+    // Assemble the camera info
+    if (cam_info_.height != (unsigned int)image.height || cam_info_.width != (unsigned int)image.width)
+      ROS_DEBUG_THROTTLE (60, "Uncalibrated Camera");
+    cam_info_.header.stamp = image.header.stamp;
+    cam_info_.height = image.height; cam_info_.width = image.width;
+    cam_info_.header.frame_id = image.header.frame_id;
+
+    // Publish
+	  pub_image_.publish (image, cam_info_); 
+  }
 
   // **** publish the messages
 
 	pub_points_.publish  (cloud);
 	pub_points2_.publish (cloud2);
-	pub_image_.publish   (image, cam_info_); 
 
   rgbSent_   = true;
   depthSent_ = true;
