@@ -1,0 +1,8 @@
+<!-- Kinect driver nodelet publisher -->
+<library path="lib/libkinect_driver_nodelets">
+  <class name="kinect_camera/KinectDriverNodelet" type="KinectDriverNodelet" base_class_type="nodelet::Nodelet">
+    <description>
+      Kinect driver nodelet publisher.
+    </description>
+  </class>
+</library>

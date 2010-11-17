@@ -27,6 +27,11 @@
 
   <rosdep name="libusb"/>
 
+  <export>
+    <cpp cflags="-I${prefix}/include" lflags="-Wl,-rpath,${prefix}/lib -L${prefix}/lib -lkinect_driver -lkinect_driver_nodelets" />
+    <nodelet plugin="${prefix}/kinect_nodelets.xml" />
+  </export>
+
   <platform os="ubuntu" version="10.04"/>
   <platform os="ubuntu" version="10.10"/>
 </package>

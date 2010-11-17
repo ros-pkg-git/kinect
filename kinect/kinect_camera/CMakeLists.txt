@@ -20,5 +20,9 @@ link_directories (${LIBUSB_LIBRARY_DIRS})
 rosbuild_add_library (kinect_driver src/kinect_driver.cpp)
 rosbuild_add_compile_flags (kinect_driver ${SSE_FLAGS})
 
+rosbuild_add_library (kinect_driver_nodelets src/kinect_driver_nodelets.cpp)
+rosbuild_add_compile_flags (kinect_driver_nodelets ${SSE_FLAGS})
+target_link_libraries (kinect_driver_nodelets kinect_driver)
+
 rosbuild_add_executable (kinect_node src/kinect_node.cpp)
 target_link_libraries (kinect_node kinect_driver)
