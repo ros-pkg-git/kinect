@@ -1,15 +1,19 @@
 <package>
   <description brief="freenect">
-
-     freenect
-
+    Downloads, patches and compiles a libfreenect fork (originally written by Hector Martin).
   </description>
-  <author>Tully Foote</author>
+
+  <author>Ivan Dryanovski</author>
   <license>BSD</license>
   <review status="unreviewed" notes=""/>
   <url>http://ros.org/wiki/freenect</url>
 
+  <export>
+    <cpp cflags="-I${prefix}/include" lflags="-L${prefix}/lib -freenect"/>
+  </export>
+
   <rosdep name="libusb1.0"/>
+
 </package>
 
 
