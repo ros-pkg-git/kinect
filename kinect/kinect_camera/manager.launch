@@ -1,0 +1,4 @@
+<launch>
+  <node pkg="kinect_camera" type="kinect_node" name="kinect_node_1" args="0" output="screen" />
+  <node pkg="kinect_camera" type="kinect_node" name="kinect_node_2" args="1" output="screen" />
+</launch>
