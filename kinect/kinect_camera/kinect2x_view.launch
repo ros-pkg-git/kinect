@@ -7,5 +7,5 @@
     <remap from="image" to="/kinect_node_2/image_raw" />
   </node>
 
-  <node pkg="rviz" type="rviz" name="rviz" args="-d `rospack find kinect_camera`/kinect2x.vcg" output="screen" />
+  <node pkg="rviz" type="rviz" name="rviz" args="-d $(find kinect_camera)/kinect2x.vcg" output="screen" />
 </launch>
