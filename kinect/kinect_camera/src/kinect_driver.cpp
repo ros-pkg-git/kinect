@@ -49,7 +49,8 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   : reconfigure_server_(param_nh),
     width_ (640), height_ (480),
     f_ctx_(NULL), f_dev_(NULL),
-    depth_sent_ (false), rgb_sent_ (false)
+    depth_sent_ (false), rgb_sent_ (false), 
+    have_depth_matrix_(false)
 {
   // Set up reconfigure server
   ReconfigureServer::CallbackType f = boost::bind(&KinectDriver::configCb, this, _1, _2);
@@ -178,6 +179,8 @@ KinectDriver::~KinectDriver ()
 {
   freenect_close_device (f_dev_);
   freenect_shutdown (f_ctx_);
+  
+  delete [] depth_proj_matrix_;
 }
 
 /** \brief Start (resume) the data acquisition process. */
@@ -205,6 +208,13 @@ void
   KinectDriver::depthCb (freenect_device *dev, freenect_depth *buf, uint32_t timestamp)
 {
   boost::mutex::scoped_lock lock (buffer_mutex_);
+
+  // if first time in this function, build the depth projection matrix
+  if(!have_depth_matrix_)
+  {
+    createDepthProjectionMatrix();
+    have_depth_matrix_ = true;
+  }
 
   depth_sent_ = false;
 
@@ -339,6 +349,63 @@ void KinectDriver::configCb (Config &config, uint32_t level)
   }
   
   config_ = config;
+}
+
+void KinectDriver::createDepthProjectionMatrix()
+{
+  //@todo - parametrize the scaling
+  int cloudHeight = height_/2;
+  int cloudWidth  = width_/2;
+
+  image_geometry::PinholeCameraModel pcm;
+  pcm.fromCameraInfo(depth_info_manager_->getCameraInfo());
+
+  depth_proj_matrix_ = new cv::Point3d[cloudHeight * cloudWidth];
+
+  for (int y=0; y<height_; y+=2)
+	for (int x=0; x<width_ ; x+=2) 
+  {
+    cv::Point2d rawPoint(x, y);
+    cv::Point2d rectPoint;
+    cv::Point3d rectRay;
+
+    pcm.rectifyPoint(rawPoint, rectPoint);
+    pcm.projectPixelTo3dRay(rectPoint, rectRay);
+
+    // the depth reading is proportional to the z value, not the distance
+    // so we need to renormalize the vector to z = 1.0;
+    rectRay *= 1.0/rectRay.z;
+
+    depth_proj_matrix_[(y/2)*cloudWidth + x/2] = rectRay;
+  }
+}
+
+inline double KinectDriver::getDistanceFromReading(freenect_depth reading) const
+{
+  // refer to calibration here: http://www.ros.org/wiki/kinect_node
+  return -325.616 / ((double)reading + -1084.61);
+}
+
+inline bool KinectDriver::getPoint3D (freenect_depth *buf, int u, int v, float &x, float &y, float &z) const
+{
+  int reading = buf[v * width_ + u];
+
+  if (reading  >= 2048 || reading <= 0) 
+    return (false);
+
+  double range = getDistanceFromReading(reading);
+
+  if (range > config_.max_range || range <= 0)
+    return (false);  
+
+  //@todo - parametrize the scaling
+  cv::Point3d rectRay = depth_proj_matrix_[(v/2)*(width_/2) + u/2];
+  rectRay *= range;
+  x = rectRay.x;
+  y = rectRay.y;
+  z = rectRay.z;
+
+  return (true);
 }
 
 } // namespace kinect_camera

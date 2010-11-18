@@ -56,6 +56,9 @@
 #include <dynamic_reconfigure/server.h>
 #include <kinect_camera/KinectConfig.h>
 
+//@todo: warnings about deprecated header? 
+#include <image_geometry/pinhole_camera_model.h>
+
 extern "C" 
 {
   #include "libfreenect.h"
@@ -116,33 +119,7 @@ namespace kinect_camera
         * \param y the resultant y coordinate of the point
         * \param z the resultant z coordinate of the point
         */
-      inline bool
-        getPoint3D (freenect_depth *buf, int u, int v, float &x, float &y, float &z)
-      {
-        /// @todo Move this function into .cpp
-        int reading = buf[v * width_ + u];
-
-        if (reading  >= 2048 || reading <= 0) 
-          return (false);
-
-        int px = u - width_  / 2;
-        int py = v - height_ / 2;
-
-        /// @todo Use depth camera calibration here
-        x = px * (horizontal_fov_ / (double)width_);
-        y = py * (vertical_fov_ / (double)height_);
-        z = 1.0;
-      
-        double range = -325.616 / ((double)reading + -1084.61);
-        
-        if (range > config_.max_range || range <= 0)
-          return (false);
-
-        x *= range;
-        y *= range;
-        z *= range;
-        return (true);
-      }
+      inline bool getPoint3D (freenect_depth *buf, int u, int v, float &x, float &y, float &z) const;
 
     private:
       /** \brief Internal mutex. */
@@ -189,12 +166,26 @@ namespace kinect_camera
       bool depth_sent_;
       bool rgb_sent_; 
 
+      /** \brief Flag whether the rectification matrix has been created */
+      bool have_depth_matrix_;
+
+      /** \brief Matrix of rectified projection vectors for depth camera */
+      cv::Point3d * depth_proj_matrix_;
+
       /** \brief Callback for dynamic_reconfigure */
       void configCb (Config &config, uint32_t level);
     
       static void depthCbInternal (freenect_device *dev, freenect_depth *buf, uint32_t timestamp);
 
       static void rgbCbInternal (freenect_device *dev, freenect_pixel *buf, uint32_t timestamp);
+
+      /** \brief Builds the depth rectification matrix from the camera info topic */
+      void createDepthProjectionMatrix();
+
+      /** \brief Convert the raw depth reading to meters
+        * \param reading the raw reading in the depth buffer
+        */
+      inline double getDistanceFromReading(freenect_depth reading) const;
   };
 
 } // namespace kinect_camera

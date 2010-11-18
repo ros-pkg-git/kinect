@@ -22,6 +22,7 @@
   <depend package="nodelet" />
   <depend package="camera_info_manager" />
   <depend package="image_transport" />
+  <depend package="image_geometry" />
   <depend package="sensor_msgs" />
   <depend package="freenect" />
   <depend package="dynamic_reconfigure" />
