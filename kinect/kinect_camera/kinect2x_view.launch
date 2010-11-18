@@ -1,10 +1,10 @@
 <launch>
   <node pkg="image_view" type="image_view" name="image_view_1" output="screen">
-    <remap from="image" to="/kinect_node_1/image_raw" />
+    <remap from="image" to="/kinect_1/image_raw" />
   </node>
 
   <node pkg="image_view" type="image_view" name="image_view_2" output="screen">
-    <remap from="image" to="/kinect_node_2/image_raw" />
+    <remap from="image" to="/kinect_2/image_raw" />
   </node>
 
   <node pkg="rviz" type="rviz" name="rviz" args="-d $(find kinect_camera)/kinect2x.vcg" output="screen" />

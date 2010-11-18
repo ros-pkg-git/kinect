@@ -65,11 +65,8 @@ namespace kinect_camera
   class KinectDriver
   {
     public:
-      /** \brief Camera info manager object. */
-      CameraInfoManager *cam_info_manager_;
-
       /** \brief Constructor */
-      KinectDriver (const ros::NodeHandle &nh);
+      KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh);
       virtual ~KinectDriver ();
 
       /** \brief Depth callback. Virtual. 
@@ -85,7 +82,7 @@ namespace kinect_camera
         */
       virtual void rgbCb   (freenect_device *dev, freenect_pixel *rgb, uint32_t timestamp);
 
-
+      /// @todo Replace explicit stop/start with subscriber callbacks
       /** \brief Start (resume) the data acquisition process. */
       void start ();
       /** \brief Stop (pause) the data acquisition process. */
@@ -128,7 +125,8 @@ namespace kinect_camera
 
         int px = u - width_  / 2;
         int py = v - height_ / 2;
-      
+
+        /// @todo Use depth camera calibration here
         x = px * (horizontal_fov_ / (double)width_);
         y = py * (vertical_fov_ / (double)height_);
         z = 1.0;
@@ -148,12 +146,12 @@ namespace kinect_camera
       /** \brief Internal mutex. */
       boost::mutex buffer_mutex_;
 
-      /** \brief Internal node handle copy. */
-      ros::NodeHandle nh_;
-
       /** \brief ROS publishers. */
       image_transport::CameraPublisher pub_image_;
       ros::Publisher pub_points_, pub_points2_;
+
+      /** \brief Camera info manager object. */
+      CameraInfoManager *cam_info_manager_;
 
       /** \brief Camera parameters. */
       int width_;
@@ -170,7 +168,8 @@ namespace kinect_camera
 
       /** \brief Freenect device structure. */
       freenect_device *f_dev_;
-    
+
+      /// @todo May actually want to allocate each time when using nodelets
       /** \brief Image data. */
       sensor_msgs::Image image_;
       /** \brief PointCloud data. */
@@ -183,14 +182,9 @@ namespace kinect_camera
       bool depth_sent_;
       bool rgb_sent_; 
 
-      /** \brief Buffer that holds the depth values. */
-      //uint16_t *depth_buf_;
-      /** \brief Buffer that holds the RGB values. */
-      //uint8_t  *rgb_buf_;
+      static void depthCbInternal (freenect_device *dev, freenect_depth *buf, uint32_t timestamp);
 
-    static void depthCbInternal (freenect_device *dev, freenect_depth *buf, uint32_t timestamp);
-
-    static void rgbCbInternal (freenect_device *dev, freenect_pixel *buf, uint32_t timestamp);
+      static void rgbCbInternal (freenect_device *dev, freenect_pixel *buf, uint32_t timestamp);
   };
 
 } // namespace kinect_camera

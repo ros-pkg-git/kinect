@@ -1,9 +1,11 @@
 <launch>
   <node pkg="kinect_camera" type="kinect_node" name="kinect_node_1" output="screen">
+    <remap from="camera" to="kinect_1" />
     <param name="device_id" value="0" />
   </node>
 
   <node pkg="kinect_camera" type="kinect_node" name="kinect_node_2" output="screen">
+    <remap from="camera" to="kinect_2" />
     <param name="device_id" value="1" />
   </node>
 </launch>

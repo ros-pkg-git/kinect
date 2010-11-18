@@ -43,17 +43,15 @@
 namespace kinect_camera {
 
 /** \brief Constructor */
-KinectDriver::KinectDriver (const ros::NodeHandle &nh) : nh_ (nh), width_ (640), height_ (480), max_range_ (5.0), depth_sent_ (false), rgb_sent_ (false)
+KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
+  : width_ (640), height_ (480),
+    depth_sent_ (false), rgb_sent_ (false)
 {
-  cam_info_manager_ = new CameraInfoManager (nh_);
-
-  nh_.getParam ("max_range", max_range_);
-  nh_.getParam ("width", width_);
-  nh_.getParam ("height", height_);
+  param_nh.param ("max_range", max_range_, 5.0);
 
   // Assemble the point cloud data
-  std::string kinect_depth_frame ("/kinect_depth");
-  nh_.getParam ("kinect_depth_frame", kinect_depth_frame);
+  std::string kinect_depth_frame;
+  param_nh.param ("kinect_depth_frame", kinect_depth_frame, std::string("/kinect_depth"));
   cloud_.header.frame_id = cloud2_.header.frame_id = kinect_depth_frame;
   cloud_.channels.resize (1);
   cloud_.channels[0].name = "rgb";
@@ -82,41 +80,37 @@ KinectDriver::KinectDriver (const ros::NodeHandle &nh) : nh_ (nh), width_ (640),
 
 
   // Assemble the image data
-  std::string kinect_RGB_frame ("/kinect_rgb");
-  nh_.getParam ("kinect_rgb_frame", kinect_RGB_frame);
+  std::string kinect_RGB_frame;
+  param_nh.param ("kinect_rgb_frame", kinect_RGB_frame, std::string("/kinect_rgb"));
   image_.header.frame_id = kinect_RGB_frame;
 
-  image_.height = height_; image_.width = width_;
+  image_.height = height_;
+  image_.width = width_;
   image_.encoding = "rgb8";
   image_.step = width_ * 3;
   image_.data.resize (width_ * height_ * 3);
-  cam_info_.height = image_.height; cam_info_.width = image_.width;
+  cam_info_.height = image_.height;
+  cam_info_.width = image_.width;
   cam_info_.header.frame_id = image_.header.frame_id; 
 
   // Read calibration parameters from disk
-  std::string cam_name ("camera"), cam_info_url ("auto");
-  nh_.getParam ("camera_name", cam_name);
-  nh_.getParam ("camera_info_url", cam_info_url);
-
-  if (cam_info_url.compare ("auto") == 0) 
-    cam_info_url = std::string ("file://")+ros::package::getPath (ROS_PACKAGE_NAME)+std::string("/info/calibration.yaml");
+  std::string cam_name, cam_info_url;
+  param_nh.param ("camera_name", cam_name, std::string("camera"));
+  /// @todo This doesn't really belong. Allow no calibration
+  if (!param_nh.getParam ("camera_info_url", cam_info_url)) {
+    cam_info_url = std::string ("file://") + ros::package::getPath (ROS_PACKAGE_NAME) +
+                   std::string("/info/calibration.yaml");
+  }
   ROS_INFO ("[KinectDriver] Calibration URL: %s", cam_info_url.c_str ());
 
-  if (cam_info_manager_->validateURL (cam_info_url)) 
-    cam_info_manager_->loadCameraInfo (cam_info_url);
-  else
-  {
-    ROS_ERROR ("[KinectDriver] Invalid Calibration URL");
-    ROS_BREAK ();
-  }
-  cam_info_manager_->setCameraName (cam_name);
+  cam_info_manager_ = new CameraInfoManager (comm_nh, cam_name, cam_info_url);
   cam_info_ = cam_info_manager_->getCameraInfo ();
 
   // Publishers and subscribers
-  image_transport::ImageTransport it (nh_);
+  image_transport::ImageTransport it(comm_nh);
   pub_image_   = it.advertiseCamera ("image_raw", 1);
-  pub_points_  = nh_.advertise<sensor_msgs::PointCloud>("points", 15);
-  pub_points2_ = nh_.advertise<sensor_msgs::PointCloud2>("points2", 15);
+  pub_points_  = comm_nh.advertise<sensor_msgs::PointCloud>("points", 15);
+  pub_points2_ = comm_nh.advertise<sensor_msgs::PointCloud2>("points2", 15);
 }
 
 /** \brief Initialize a Kinect device, given an index.
@@ -260,7 +254,7 @@ void
     }
   }
   // Publish only if we have an rgb image too
-  if (/*rgb_buf_ && */!rgb_sent_) 
+  if (!rgb_sent_) 
     publish ();
 }
 
@@ -287,17 +281,19 @@ void
   }
 
   // Publish only if we have a depth image too
-  if (/*depth_buf_ && */!depth_sent_) 
+  if (!depth_sent_) 
     publish ();
 }
 
 void 
   KinectDriver::publish ()
 {
-  /// @todo Do something with the timestamps from the device
+  /// @todo Investigate how well synchronized the depth & color images are
+  
+  /// @todo Do something with the real timestamps from the device
   // Get the current time
   ros::Time time = ros::Time::now ();
-	cloud_.header.stamp = cloud2_.header.stamp = time;
+  cloud_.header.stamp = cloud2_.header.stamp = time;
   image_.header.stamp = cam_info_.header.stamp = time;
 
   // Publish RGB Image

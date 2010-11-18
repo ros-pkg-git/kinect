@@ -47,14 +47,15 @@ int
   // Init ROS
   ros::init (argc, argv, "kinect_node"); 
 
-  ros::NodeHandle nh ("~");
+  ros::NodeHandle comm_nh ("camera"); // for topics, services
+  ros::NodeHandle param_nh ("~");     // for parameters
 
   // Read the device_id parameter from the server
   int device_id;
-  nh.param ("device_id", device_id, argc > 1 ? atoi (argv[1]) : 0);
+  param_nh.param ("device_id", device_id, argc > 1 ? atoi (argv[1]) : 0);
 
   // Create the KinectDriver object
-  kinect_camera::KinectDriver k (nh);
+  kinect_camera::KinectDriver k (comm_nh, param_nh);
   if (!k.init (device_id))
     return (-1);
   k.start ();
