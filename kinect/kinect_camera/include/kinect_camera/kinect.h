@@ -150,8 +150,8 @@ namespace kinect_camera
       image_transport::CameraPublisher pub_rgb_, pub_depth_;
       ros::Publisher pub_points_, pub_points2_;
 
-      /** \brief Camera info manager object. */
-      CameraInfoManager *cam_info_manager_;
+      /** \brief Camera info manager objects. */
+      boost::shared_ptr<CameraInfoManager> rgb_info_manager_, depth_info_manager_;
 
       /** \brief Camera parameters. */
       int width_;
@@ -177,7 +177,7 @@ namespace kinect_camera
       /** \brief PointCloud2 data. */
       sensor_msgs::PointCloud2 cloud2_;
       /** \brief Camera info data. */
-      sensor_msgs::CameraInfo cam_info_;
+      sensor_msgs::CameraInfo rgb_info_, depth_info_;
 
       bool depth_sent_;
       bool rgb_sent_; 

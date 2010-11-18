@@ -39,6 +39,7 @@
  */
 
 #include "kinect_camera/kinect.h"
+#include <boost/make_shared.hpp>
 
 namespace kinect_camera {
 
@@ -89,22 +90,22 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   image_.encoding = "rgb8";
   image_.step = width_ * 3;
   image_.data.resize (width_ * height_ * 3);
-  cam_info_.height = image_.height;
-  cam_info_.width = image_.width;
-  cam_info_.header.frame_id = image_.header.frame_id; 
+  rgb_info_.header.frame_id = image_.header.frame_id; 
 
   // Read calibration parameters from disk
-  std::string cam_name, cam_info_url;
+  std::string cam_name, rgb_info_url, depth_info_url;
   param_nh.param ("camera_name", cam_name, std::string("camera"));
-  /// @todo This doesn't really belong. Allow no calibration
-  if (!param_nh.getParam ("camera_info_url", cam_info_url)) {
-    cam_info_url = std::string ("file://") + ros::package::getPath (ROS_PACKAGE_NAME) +
-                   std::string("/info/calibration.yaml");
-  }
-  ROS_INFO ("[KinectDriver] Calibration URL: %s", cam_info_url.c_str ());
+  param_nh.param ("rgb/camera_info_url", rgb_info_url, std::string());
+  param_nh.param ("depth/camera_info_url", depth_info_url, std::string());
+  ROS_INFO ("[KinectDriver] Calibration URLs:\n\tRGB: %s\n\tDepth: %s",
+            rgb_info_url.c_str (), depth_info_url.c_str ());
 
-  cam_info_manager_ = new CameraInfoManager (comm_nh, cam_name, cam_info_url);
-  cam_info_ = cam_info_manager_->getCameraInfo ();
+  rgb_info_manager_   = boost::make_shared<CameraInfoManager> (ros::NodeHandle(comm_nh, "rgb"),
+                                                               cam_name, rgb_info_url);
+  depth_info_manager_ = boost::make_shared<CameraInfoManager> (ros::NodeHandle(comm_nh, "depth"),
+                                                               cam_name, depth_info_url);
+  rgb_info_   = rgb_info_manager_->getCameraInfo ();
+  depth_info_ = depth_info_manager_->getCameraInfo ();
 
   // Publishers and subscribers
   image_transport::ImageTransport it(comm_nh);
@@ -277,7 +278,7 @@ void
     memcpy (&image_.data[0], &rgb[0], width_ * height_ * 3);
 
     // Check the camera info
-    if (cam_info_.height != (size_t)image_.height || cam_info_.width != (size_t)image_.width)
+    if (rgb_info_.height != (size_t)image_.height || rgb_info_.width != (size_t)image_.width)
       ROS_DEBUG_THROTTLE (60, "[KinectDriver::rgbCb] Uncalibrated Camera");
   }
 
@@ -295,11 +296,11 @@ void
   // Get the current time
   ros::Time time = ros::Time::now ();
   cloud_.header.stamp = cloud2_.header.stamp = time;
-  image_.header.stamp = cam_info_.header.stamp = time;
+  image_.header.stamp = rgb_info_.header.stamp = time;
 
   // Publish RGB Image
   if (pub_rgb_.getNumSubscribers () > 0)
-    pub_rgb_.publish (image_, cam_info_); 
+    pub_rgb_.publish (image_, rgb_info_); 
 
   // Publish the PointCloud messages
   if (pub_points_.getNumSubscribers () > 0)
@@ -309,6 +310,8 @@ void
 
   rgb_sent_   = true;
   depth_sent_ = true;
+
+  /// @todo Publish depth image for "stereo" calibration
 }
 
 } // namespace kinect_camera
