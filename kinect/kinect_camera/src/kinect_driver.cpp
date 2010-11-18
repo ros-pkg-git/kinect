@@ -86,14 +86,22 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   cloud2_.data.resize (cloud2_.row_step   * cloud2_.height);
   cloud2_.is_dense = true;
 
+  // Assemble the depth image data
+  depth_image_.header.frame_id = kinect_depth_frame;
+	depth_image_.height = height_;
+	depth_image_.width = width_;
+	depth_image_.encoding = "mono8";
+	depth_image_.step = width_;
+  depth_image_.data.resize(width_ * height_);
+  depth_info_.header.frame_id = depth_image_.header.frame_id; 
 
   // Assemble the image data
   std::string kinect_RGB_frame;
   param_nh.param ("kinect_rgb_frame", kinect_RGB_frame, std::string("/kinect_rgb"));
-  image_.header.frame_id = kinect_RGB_frame;
-  image_.height = height_;
-  image_.width = width_;
-  rgb_info_.header.frame_id = image_.header.frame_id; 
+  rgb_image_.header.frame_id = kinect_RGB_frame;
+  rgb_image_.height = height_;
+  rgb_image_.width = width_;
+  rgb_info_.header.frame_id = rgb_image_.header.frame_id; 
 
   // Read calibration parameters from disk
   std::string cam_name, rgb_info_url, depth_info_url;
@@ -268,6 +276,12 @@ void
       }
     }
   }
+  if (pub_depth_.getNumSubscribers () > 0)
+  { 
+    // Fill in the depth image data
+    depthBufferTo8BitImage(buf);
+  }
+
   // Publish only if we have an rgb image too
   if (!rgb_sent_) 
     publish ();
@@ -288,10 +302,10 @@ void
   if (pub_rgb_.getNumSubscribers () > 0)
   {
     // Copy the image data
-    memcpy (&image_.data[0], &rgb[0], image_.data.size());
+    memcpy (&rgb_image_.data[0], &rgb[0], rgb_image_.data.size());
 
     // Check the camera info
-    if (rgb_info_.height != (size_t)image_.height || rgb_info_.width != (size_t)image_.width)
+    if (rgb_info_.height != (size_t)rgb_image_.height || rgb_info_.width != (size_t)rgb_image_.width)
       ROS_DEBUG_THROTTLE (60, "[KinectDriver::rgbCb] Uncalibrated Camera");
   }
 
@@ -309,11 +323,16 @@ void
   // Get the current time
   ros::Time time = ros::Time::now ();
   cloud_.header.stamp = cloud2_.header.stamp = time;
-  image_.header.stamp = rgb_info_.header.stamp = time;
+  rgb_image_.header.stamp   = rgb_info_.header.stamp   = time;
+  depth_image_.header.stamp = depth_info_.header.stamp = time;
 
   // Publish RGB Image
   if (pub_rgb_.getNumSubscribers () > 0)
-    pub_rgb_.publish (image_, rgb_info_); 
+    pub_rgb_.publish (rgb_image_, rgb_info_); 
+
+  // Publish depth Image
+  if (pub_depth_.getNumSubscribers () > 0)
+    pub_depth_.publish (depth_image_, depth_info_); 
 
   // Publish the PointCloud messages
   if (pub_points_.getNumSubscribers () > 0)
@@ -334,14 +353,14 @@ void KinectDriver::configCb (Config &config, uint32_t level)
   // Configure color output to be RGB or Bayer
   /// @todo Mucking with image_ here might not be thread-safe
   if (config.color_format == FREENECT_FORMAT_RGB) {
-    image_.encoding = sensor_msgs::image_encodings::RGB8;
-    image_.data.resize(FREENECT_RGB_SIZE);
-    image_.step = FREENECT_FRAME_W * 3;
+    rgb_image_.encoding = sensor_msgs::image_encodings::RGB8;
+    rgb_image_.data.resize(FREENECT_RGB_SIZE);
+    rgb_image_.step = FREENECT_FRAME_W * 3;
   }
   else {
-    image_.encoding = sensor_msgs::image_encodings::BAYER_GRBG8;
-    image_.data.resize(FREENECT_BAYER_SIZE);
-    image_.step = FREENECT_FRAME_W;
+    rgb_image_.encoding = sensor_msgs::image_encodings::BAYER_GRBG8;
+    rgb_image_.data.resize(FREENECT_BAYER_SIZE);
+    rgb_image_.step = FREENECT_FRAME_W;
   }
   if (f_dev_) {
     freenect_set_rgb_format(f_dev_, (freenect_rgb_format)config.color_format);
@@ -406,6 +425,26 @@ inline bool KinectDriver::getPoint3D (freenect_depth *buf, int u, int v, float &
   z = rectRay.z;
 
   return (true);
+}
+
+void KinectDriver::depthBufferTo8BitImage(const freenect_depth * buf)
+{
+	for (int y=0; y<height_; ++y)
+  for (int x=0; x<width_;  ++x) 
+  {
+    int index(y*width_ + x);
+    int reading = buf[index];
+    double range = getDistanceFromReading(reading);
+
+    uint8_t color;
+
+    if (range > config_.max_range || range < 0) 
+      color = 255;
+    else
+      color = 255 * range / config_.max_range;
+
+    depth_image_.data[index] = color;
+  }
 }
 
 } // namespace kinect_camera
