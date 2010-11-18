@@ -44,21 +44,22 @@ PLUGINLIB_DECLARE_CLASS (kinect_camera, KinectDriverNodelet, KinectDriverNodelet
 void
   kinect_camera::KinectDriverNodelet::onInit ()
 {
-  ros::NodeHandle pnh = getMTPrivateNodeHandle ();
-  k = new KinectDriver (pnh);
+  /// @todo What exactly goes on with the threading here? -PM
+  ros::NodeHandle comm_nh( getMTNodeHandle().resolveName("camera") ); // for topics, services
+  ros::NodeHandle param_nh = getMTPrivateNodeHandle (); // for parameters
+  k = new KinectDriver (comm_nh, param_nh);
 
-  int device_id = 0;
-  pnh.getParam ("device_id", device_id);
+  int device_id;
+  param_nh.param ("device_id", device_id, 0);
 
   if (!k->init (device_id))
     return;
   k->start ();
 
   ros::Duration r (0.0001);
-  while (pnh.ok () && k->ok ())
+  while (ros::ok () && k->ok ())
   {
     ros::spinOnce ();
     r.sleep ();
   }
 }
-

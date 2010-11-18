@@ -1,9 +1,15 @@
 <launch>
   <node pkg="kinect_camera" type="kinect_node" name="kinect_node_1" output="screen">
+    <remap from="camera" to="kinect_1" />
     <param name="device_id" value="0" />
+    <param name="rgb/camera_info_url"   value="file://$(find kinect_camera)/info/calibration.yaml" />
+    <param name="depth/camera_info_url" value="file://$(find kinect_camera)/info/calibration.yaml" />
   </node>
 
   <node pkg="kinect_camera" type="kinect_node" name="kinect_node_2" output="screen">
+    <remap from="camera" to="kinect_2" />
     <param name="device_id" value="1" />
+    <param name="rgb/camera_info_url"   value="file://$(find kinect_camera)/info/calibration.yaml" />
+    <param name="depth/camera_info_url" value="file://$(find kinect_camera)/info/calibration.yaml" />
   </node>
 </launch>

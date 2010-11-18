@@ -16,6 +16,11 @@ pkg_check_modules (LIBUSB REQUIRED libusb-1.0)
 include_directories (${LIBUSB_INCLUDE_DIRS})
 link_directories (${LIBUSB_LIBRARY_DIRS})
 
+# Dynamic reconfigure
+rosbuild_find_ros_package(dynamic_reconfigure)
+include(${dynamic_reconfigure_PACKAGE_PATH}/cmake/cfgbuild.cmake)
+gencfg()
+
 # ---[ Kinect Driver
 rosbuild_add_library (kinect_driver src/kinect_driver.cpp)
 rosbuild_add_compile_flags (kinect_driver ${SSE_FLAGS})

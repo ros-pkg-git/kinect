@@ -39,29 +39,33 @@
  */
 
 #include "kinect_camera/kinect.h"
+#include <sensor_msgs/image_encodings.h>
+#include <boost/make_shared.hpp>
 
+namespace kinect_camera {
 
 /** \brief Constructor */
-kinect_camera::KinectDriver::KinectDriver (const ros::NodeHandle &nh) : nh_ (nh), width_ (640), height_ (480), max_range_ (5.0), depth_sent_ (false), rgb_sent_ (false)
+KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
+  : reconfigure_server_(param_nh),
+    width_ (640), height_ (480),
+    f_ctx_(NULL), f_dev_(NULL),
+    depth_sent_ (false), rgb_sent_ (false), 
+    have_depth_matrix_(false)
 {
-  cam_info_manager_ = new CameraInfoManager (nh_);
-
-  // Workaround for libfreenect's C issues
-  kinect_driver_global = this;
-
-  nh_.getParam ("max_range", max_range_);
-  nh_.getParam ("width", width_);
-  nh_.getParam ("height", height_);
-
+  // Set up reconfigure server
+  ReconfigureServer::CallbackType f = boost::bind(&KinectDriver::configCb, this, _1, _2);
+  reconfigure_server_.setCallback(f);
+  
   // Assemble the point cloud data
-  std::string kinect_depth_frame ("/kinect_depth");
-  nh_.getParam ("kinect_depth_frame", kinect_depth_frame);
+  std::string kinect_depth_frame;
+  param_nh.param ("kinect_depth_frame", kinect_depth_frame, std::string("/kinect_depth"));
   cloud_.header.frame_id = cloud2_.header.frame_id = kinect_depth_frame;
   cloud_.channels.resize (1);
   cloud_.channels[0].name = "rgb";
   cloud_.channels[0].values.resize (0);
 
-  cloud2_.height = height_; cloud2_.width = width_;
+  cloud2_.height = height_;
+  cloud2_.width = width_;
   cloud2_.fields.resize (4);
   cloud2_.fields[0].name = "x";
   cloud2_.fields[1].name = "y";
@@ -84,48 +88,41 @@ kinect_camera::KinectDriver::KinectDriver (const ros::NodeHandle &nh) : nh_ (nh)
 
 
   // Assemble the image data
-  std::string kinect_RGB_frame ("/kinect_rgb");
-  nh_.getParam ("kinect_rgb_frame", kinect_RGB_frame);
+  std::string kinect_RGB_frame;
+  param_nh.param ("kinect_rgb_frame", kinect_RGB_frame, std::string("/kinect_rgb"));
   image_.header.frame_id = kinect_RGB_frame;
-
-  image_.height = height_; image_.width = width_;
-  image_.encoding = "rgb8";
-  image_.step = width_ * 3;
-  image_.data.resize (width_ * height_ * 3);
-  cam_info_.height = image_.height; cam_info_.width = image_.width;
-  cam_info_.header.frame_id = image_.header.frame_id; 
+  image_.height = height_;
+  image_.width = width_;
+  rgb_info_.header.frame_id = image_.header.frame_id; 
 
   // Read calibration parameters from disk
-  std::string cam_name ("camera"), cam_info_url ("auto");
-  nh_.getParam ("camera_name", cam_name);
-  nh_.getParam ("camera_info_url", cam_info_url);
+  std::string cam_name, rgb_info_url, depth_info_url;
+  param_nh.param ("camera_name", cam_name, std::string("camera"));
+  param_nh.param ("rgb/camera_info_url", rgb_info_url, std::string());
+  param_nh.param ("depth/camera_info_url", depth_info_url, std::string());
+  ROS_INFO ("[KinectDriver] Calibration URLs:\n\tRGB: %s\n\tDepth: %s",
+            rgb_info_url.c_str (), depth_info_url.c_str ());
 
-  if (cam_info_url.compare ("auto") == 0) 
-    cam_info_url = std::string ("file://")+ros::package::getPath (ROS_PACKAGE_NAME)+std::string("/info/calibration.yaml");
-  ROS_INFO ("[KinectDriver] Calibration URL: %s", cam_info_url.c_str ());
-
-  if (cam_info_manager_->validateURL (cam_info_url)) 
-    cam_info_manager_->loadCameraInfo (cam_info_url);
-  else
-  {
-    ROS_ERROR ("[KinectDriver] Invalid Calibration URL");
-    ROS_BREAK ();
-  }
-  cam_info_manager_->setCameraName (cam_name);
-  cam_info_ = cam_info_manager_->getCameraInfo ();
+  rgb_info_manager_   = boost::make_shared<CameraInfoManager> (ros::NodeHandle(comm_nh, "rgb"),
+                                                               cam_name, rgb_info_url);
+  depth_info_manager_ = boost::make_shared<CameraInfoManager> (ros::NodeHandle(comm_nh, "depth"),
+                                                               cam_name, depth_info_url);
+  rgb_info_   = rgb_info_manager_->getCameraInfo ();
+  depth_info_ = depth_info_manager_->getCameraInfo ();
 
   // Publishers and subscribers
-  image_transport::ImageTransport it (nh_);
-  pub_image_   = it.advertiseCamera ("image_raw", 1);
-  pub_points_  = nh_.advertise<sensor_msgs::PointCloud>("points", 15);
-  pub_points2_ = nh_.advertise<sensor_msgs::PointCloud2>("points2", 15);
+  image_transport::ImageTransport it(comm_nh);
+  pub_rgb_     = it.advertiseCamera ("rgb/image_raw", 1);
+  pub_depth_   = it.advertiseCamera ("depth/image_raw", 1);
+  pub_points_  = comm_nh.advertise<sensor_msgs::PointCloud>("points", 15);
+  pub_points2_ = comm_nh.advertise<sensor_msgs::PointCloud2>("points2", 15);
 }
 
 /** \brief Initialize a Kinect device, given an index.
   * \param index the index of the device to initialize
   */
 bool
-  kinect_camera::KinectDriver::init (int index)
+  KinectDriver::init (int index)
 {
   // Initialize the USB 
   if (freenect_init (&f_ctx_, NULL) < 0)
@@ -156,24 +153,39 @@ bool
   }
 
   // Set the appropriate data callbacks
-  freenect_set_depth_callback (f_dev_, kinect_camera::globalDepthCb);
-  freenect_set_rgb_callback (f_dev_, kinect_camera::globalrgbCb);
-  freenect_set_rgb_format (f_dev_, FREENECT_FORMAT_RGB);
+  freenect_set_user(f_dev_, this);
+  freenect_set_depth_callback (f_dev_, &KinectDriver::depthCbInternal);
+  freenect_set_rgb_callback (f_dev_, &KinectDriver::rgbCbInternal);
+  freenect_set_rgb_format (f_dev_, (freenect_rgb_format)config_.color_format);
+  freenect_set_led(f_dev_, (freenect_led_options)config_.led);
 
   return (true);
 }
 
+void KinectDriver::depthCbInternal (freenect_device *dev, freenect_depth *buf, uint32_t timestamp)
+{
+  KinectDriver* driver = reinterpret_cast<KinectDriver*>(freenect_get_user(dev));
+  driver->depthCb(dev, buf, timestamp);
+}
+
+void KinectDriver::rgbCbInternal (freenect_device *dev, freenect_pixel *buf, uint32_t timestamp)
+{
+  KinectDriver* driver = reinterpret_cast<KinectDriver*>(freenect_get_user(dev));
+  driver->rgbCb(dev, buf, timestamp);
+}
+
 /** \brief Destructor */
-kinect_camera::KinectDriver::~KinectDriver ()
+KinectDriver::~KinectDriver ()
 {
   freenect_close_device (f_dev_);
   freenect_shutdown (f_ctx_);
-  kinect_driver_global = NULL;
+  
+  delete [] depth_proj_matrix_;
 }
 
 /** \brief Start (resume) the data acquisition process. */
 void 
-  kinect_camera::KinectDriver::start ()
+  KinectDriver::start ()
 {
   freenect_start_depth (f_dev_);
   freenect_start_rgb (f_dev_);
@@ -181,7 +193,7 @@ void
 
 /** \brief Stop (pause) the data acquisition process. */
 void 
-  kinect_camera::KinectDriver::stop ()
+  KinectDriver::stop ()
 {
   freenect_stop_depth (f_dev_);
   freenect_stop_rgb (f_dev_);
@@ -193,9 +205,16 @@ void
   * \param timestamp the time when the data was acquired
   */
 void 
-  kinect_camera::KinectDriver::depthCb (freenect_device *dev, freenect_depth *buf, uint32_t timestamp)
+  KinectDriver::depthCb (freenect_device *dev, freenect_depth *buf, uint32_t timestamp)
 {
   boost::mutex::scoped_lock lock (buffer_mutex_);
+
+  // if first time in this function, build the depth projection matrix
+  if(!have_depth_matrix_)
+  {
+    createDepthProjectionMatrix();
+    have_depth_matrix_ = true;
+  }
 
   depth_sent_ = false;
 
@@ -250,7 +269,7 @@ void
     }
   }
   // Publish only if we have an rgb image too
-  if (/*rgb_buf_ && */!rgb_sent_) 
+  if (!rgb_sent_) 
     publish ();
 }
 
@@ -260,38 +279,41 @@ void
   * \param timestamp the time when the data was acquired
   */
 void 
-  kinect_camera::KinectDriver::rgbCb (freenect_device *dev, freenect_pixel *rgb, uint32_t timestamp)
+  KinectDriver::rgbCb (freenect_device *dev, freenect_pixel *rgb, uint32_t timestamp)
 {
   boost::mutex::scoped_lock lock (buffer_mutex_);
 
   rgb_sent_ = false;
 
-  if (pub_image_.getNumSubscribers () > 0)
+  if (pub_rgb_.getNumSubscribers () > 0)
   {
     // Copy the image data
-    memcpy (&image_.data[0], &rgb[0], width_ * height_ * 3);
+    memcpy (&image_.data[0], &rgb[0], image_.data.size());
 
     // Check the camera info
-    if (cam_info_.height != (size_t)image_.height || cam_info_.width != (size_t)image_.width)
+    if (rgb_info_.height != (size_t)image_.height || rgb_info_.width != (size_t)image_.width)
       ROS_DEBUG_THROTTLE (60, "[KinectDriver::rgbCb] Uncalibrated Camera");
   }
 
   // Publish only if we have a depth image too
-  if (/*depth_buf_ && */!depth_sent_) 
+  if (!depth_sent_) 
     publish ();
 }
 
 void 
-  kinect_camera::KinectDriver::publish ()
+  KinectDriver::publish ()
 {
+  /// @todo Investigate how well synchronized the depth & color images are
+  
+  /// @todo Do something with the real timestamps from the device
   // Get the current time
   ros::Time time = ros::Time::now ();
-	cloud_.header.stamp = cloud2_.header.stamp = time;
-  image_.header.stamp = cam_info_.header.stamp = time;
+  cloud_.header.stamp = cloud2_.header.stamp = time;
+  image_.header.stamp = rgb_info_.header.stamp = time;
 
   // Publish RGB Image
-  if (pub_image_.getNumSubscribers () > 0)
-    pub_image_.publish (image_, cam_info_); 
+  if (pub_rgb_.getNumSubscribers () > 0)
+    pub_rgb_.publish (image_, rgb_info_); 
 
   // Publish the PointCloud messages
   if (pub_points_.getNumSubscribers () > 0)
@@ -301,4 +323,89 @@ void
 
   rgb_sent_   = true;
   depth_sent_ = true;
+
+  /// @todo Publish depth image for "stereo" calibration
 }
+
+void KinectDriver::configCb (Config &config, uint32_t level)
+{
+  /// @todo Integrate init() in here, so can change device and not worry about first config call
+  
+  // Configure color output to be RGB or Bayer
+  /// @todo Mucking with image_ here might not be thread-safe
+  if (config.color_format == FREENECT_FORMAT_RGB) {
+    image_.encoding = sensor_msgs::image_encodings::RGB8;
+    image_.data.resize(FREENECT_RGB_SIZE);
+    image_.step = FREENECT_FRAME_W * 3;
+  }
+  else {
+    image_.encoding = sensor_msgs::image_encodings::BAYER_GRBG8;
+    image_.data.resize(FREENECT_BAYER_SIZE);
+    image_.step = FREENECT_FRAME_W;
+  }
+  if (f_dev_) {
+    freenect_set_rgb_format(f_dev_, (freenect_rgb_format)config.color_format);
+    freenect_set_led(f_dev_, (freenect_led_options)config.led);
+  }
+  
+  config_ = config;
+}
+
+void KinectDriver::createDepthProjectionMatrix()
+{
+  //@todo - parametrize the scaling
+  int cloudHeight = height_/2;
+  int cloudWidth  = width_/2;
+
+  image_geometry::PinholeCameraModel pcm;
+  pcm.fromCameraInfo(depth_info_manager_->getCameraInfo());
+
+  depth_proj_matrix_ = new cv::Point3d[cloudHeight * cloudWidth];
+
+  for (int y=0; y<height_; y+=2)
+	for (int x=0; x<width_ ; x+=2) 
+  {
+    cv::Point2d rawPoint(x, y);
+    cv::Point2d rectPoint;
+    cv::Point3d rectRay;
+
+    pcm.rectifyPoint(rawPoint, rectPoint);
+    pcm.projectPixelTo3dRay(rectPoint, rectRay);
+
+    // the depth reading is proportional to the z value, not the distance
+    // so we need to renormalize the vector to z = 1.0;
+    rectRay *= 1.0/rectRay.z;
+
+    depth_proj_matrix_[(y/2)*cloudWidth + x/2] = rectRay;
+  }
+}
+
+inline double KinectDriver::getDistanceFromReading(freenect_depth reading) const
+{
+  // refer to calibration here: http://www.ros.org/wiki/kinect_node
+  return -325.616 / ((double)reading + -1084.61);
+}
+
+inline bool KinectDriver::getPoint3D (freenect_depth *buf, int u, int v, float &x, float &y, float &z) const
+{
+  int reading = buf[v * width_ + u];
+
+  if (reading  >= 2048 || reading <= 0) 
+    return (false);
+
+  double range = getDistanceFromReading(reading);
+
+  if (range > config_.max_range || range <= 0)
+    return (false);  
+
+  //@todo - parametrize the scaling
+  cv::Point3d rectRay = depth_proj_matrix_[(v/2)*(width_/2) + u/2];
+  rectRay *= range;
+  x = rectRay.x;
+  y = rectRay.y;
+  z = rectRay.z;
+
+  return (true);
+}
+
+} // namespace kinect_camera

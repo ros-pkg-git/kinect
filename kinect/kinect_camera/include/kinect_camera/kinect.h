@@ -51,9 +51,13 @@
 #include <sensor_msgs/CameraInfo.h>
 
 #include <ros/ros.h>
-#include <ros/package.h>
 #include <camera_info_manager/camera_info_manager.h>
 #include <image_transport/image_transport.h>
+#include <dynamic_reconfigure/server.h>
+#include <kinect_camera/KinectConfig.h>
+
+//@todo: warnings about deprecated header? 
+#include <image_geometry/pinhole_camera_model.h>
 
 extern "C" 
 {
@@ -65,11 +69,8 @@ namespace kinect_camera
   class KinectDriver
   {
     public:
-      /** \brief Camera info manager object. */
-      CameraInfoManager *cam_info_manager_;
-
       /** \brief Constructor */
-      KinectDriver (const ros::NodeHandle &nh);
+      KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh);
       virtual ~KinectDriver ();
 
       /** \brief Depth callback. Virtual. 
@@ -85,7 +86,7 @@ namespace kinect_camera
         */
       virtual void rgbCb   (freenect_device *dev, freenect_pixel *rgb, uint32_t timestamp);
 
-
+      /// @todo Replace explicit stop/start with subscriber callbacks
       /** \brief Start (resume) the data acquisition process. */
       void start ();
       /** \brief Stop (pause) the data acquisition process. */
@@ -118,47 +119,28 @@ namespace kinect_camera
         * \param y the resultant y coordinate of the point
         * \param z the resultant z coordinate of the point
         */
-      inline bool
-        getPoint3D (freenect_depth *buf, int u, int v, float &x, float &y, float &z)
-      {
-        int reading = buf[v * width_ + u];
-
-        if (reading  >= 2048 || reading <= 0) 
-          return (false);
-
-        int px = u - width_  / 2;
-        int py = v - height_ / 2;
-      
-        x = px * (horizontal_fov_ / (double)width_);
-        y = py * (vertical_fov_ / (double)height_);
-        z = 1.0;
-      
-        double range = -325.616 / ((double)reading + -1084.61);
-        
-        if (range > max_range_ || range <= 0)
-          return (false);
-
-        x *= range;
-        y *= range;
-        z *= range;
-        return (true);
-      }
+      inline bool getPoint3D (freenect_depth *buf, int u, int v, float &x, float &y, float &z) const;
 
     private:
       /** \brief Internal mutex. */
       boost::mutex buffer_mutex_;
 
-      /** \brief Internal node handle copy. */
-      ros::NodeHandle nh_;
-
       /** \brief ROS publishers. */
-      image_transport::CameraPublisher pub_image_;
+      image_transport::CameraPublisher pub_rgb_, pub_depth_;
       ros::Publisher pub_points_, pub_points2_;
+
+      /** \brief Camera info manager objects. */
+      boost::shared_ptr<CameraInfoManager> rgb_info_manager_, depth_info_manager_;
+
+      /** \brief Dynamic reconfigure. */
+      typedef kinect_camera::KinectConfig Config;
+      typedef dynamic_reconfigure::Server<Config> ReconfigureServer;
+      ReconfigureServer reconfigure_server_;
+      Config config_;
 
       /** \brief Camera parameters. */
       int width_;
       int height_;
-      double max_range_;
 
       /** \brief The horizontal field of view (in radians). */
       const static double horizontal_fov_ = 57.0 * M_PI / 180.0;
@@ -170,7 +152,8 @@ namespace kinect_camera
 
       /** \brief Freenect device structure. */
       freenect_device *f_dev_;
-    
+
+      /// @todo May actually want to allocate each time when using nodelets
       /** \brief Image data. */
       sensor_msgs::Image image_;
       /** \brief PointCloud data. */
@@ -178,36 +161,33 @@ namespace kinect_camera
       /** \brief PointCloud2 data. */
       sensor_msgs::PointCloud2 cloud2_;
       /** \brief Camera info data. */
-      sensor_msgs::CameraInfo cam_info_;
+      sensor_msgs::CameraInfo rgb_info_, depth_info_;
 
       bool depth_sent_;
       bool rgb_sent_; 
 
-      /** \brief Buffer that holds the depth values. */
-      //uint16_t *depth_buf_;
-      /** \brief Buffer that holds the RGB values. */
-      //uint8_t  *rgb_buf_;
+      /** \brief Flag whether the rectification matrix has been created */
+      bool have_depth_matrix_;
+
+      /** \brief Matrix of rectified projection vectors for depth camera */
+      cv::Point3d * depth_proj_matrix_;
+
+      /** \brief Callback for dynamic_reconfigure */
+      void configCb (Config &config, uint32_t level);
+    
+      static void depthCbInternal (freenect_device *dev, freenect_depth *buf, uint32_t timestamp);
+
+      static void rgbCbInternal (freenect_device *dev, freenect_pixel *buf, uint32_t timestamp);
+
+      /** \brief Builds the depth rectification matrix from the camera info topic */
+      void createDepthProjectionMatrix();
+
+      /** \brief Convert the raw depth reading to meters
+        * \param reading the raw reading in the depth buffer
+        */
+      inline double getDistanceFromReading(freenect_depth reading) const;
   };
 
-  KinectDriver* kinect_driver_global;
-   
-  inline void 
-    globalDepthCb (freenect_device *dev, freenect_depth *buf, uint32_t timestamp)
-  {
-    if (kinect_driver_global)
-      kinect_driver_global->depthCb (dev, buf, timestamp);
-    else
-      ROS_ERROR ("[globalDepthCb] KinectDriver not initialized!");
-  }
-
-  inline void 
-    globalrgbCb (freenect_device *dev, freenect_pixel *buf, uint32_t timestamp)
-  {
-    if (kinect_driver_global)
-      kinect_driver_global->rgbCb (dev, buf, timestamp);
-    else
-      ROS_ERROR ("[globalDepthCb] KinectDriver not initialized!");
-  }
-}
+} // namespace kinect_camera
 
 #endif //KINECT_NODE_KINECT_H_

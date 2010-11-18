@@ -4,6 +4,10 @@
   <license>BSD</license>  
   <review status="unreviewed" notes=""/>
   <url>http://ros.org/wiki/kinect</url>
-  <depend stack="ros" />
+  <depend stack="common" /> <!-- nodelet -->
+  <depend stack="common_msgs" /> <!-- sensor_msgs -->
+  <depend stack="driver_common" /> <!-- dynamic_reconfigure -->
+  <depend stack="image_common" /> <!-- camera_info_manager, image_transport -->
+  <depend stack="ros" /> <!-- roscpp -->
 
 </stack>
