@@ -147,7 +147,7 @@ namespace kinect_camera
       boost::mutex buffer_mutex_;
 
       /** \brief ROS publishers. */
-      image_transport::CameraPublisher pub_image_;
+      image_transport::CameraPublisher pub_rgb_, pub_depth_;
       ros::Publisher pub_points_, pub_points2_;
 
       /** \brief Camera info manager object. */

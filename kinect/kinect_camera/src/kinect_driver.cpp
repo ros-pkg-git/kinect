@@ -108,7 +108,8 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
 
   // Publishers and subscribers
   image_transport::ImageTransport it(comm_nh);
-  pub_image_   = it.advertiseCamera ("image_raw", 1);
+  pub_rgb_     = it.advertiseCamera ("rgb/image_raw", 1);
+  pub_depth_   = it.advertiseCamera ("depth/image_raw", 1);
   pub_points_  = comm_nh.advertise<sensor_msgs::PointCloud>("points", 15);
   pub_points2_ = comm_nh.advertise<sensor_msgs::PointCloud2>("points2", 15);
 }
@@ -270,7 +271,7 @@ void
 
   rgb_sent_ = false;
 
-  if (pub_image_.getNumSubscribers () > 0)
+  if (pub_rgb_.getNumSubscribers () > 0)
   {
     // Copy the image data
     memcpy (&image_.data[0], &rgb[0], width_ * height_ * 3);
@@ -297,8 +298,8 @@ void
   image_.header.stamp = cam_info_.header.stamp = time;
 
   // Publish RGB Image
-  if (pub_image_.getNumSubscribers () > 0)
-    pub_image_.publish (image_, cam_info_); 
+  if (pub_rgb_.getNumSubscribers () > 0)
+    pub_rgb_.publish (image_, cam_info_); 
 
   // Publish the PointCloud messages
   if (pub_points_.getNumSubscribers () > 0)
