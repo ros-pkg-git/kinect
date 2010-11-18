@@ -232,9 +232,9 @@ void
     cloud_.points.resize (width_ * height_);
     int nrp = 0;
     // Assemble an ancient sensor_msgs/PointCloud message
-    for (int u = 0; u < width_; u += 2) 
+    for (int u = 0; u < width_; ++u) 
     {
-      for (int v = 0; v < height_; v += 2)
+      for (int v = 0; v < height_; ++v)
       {
         if (!getPoint3D (buf, u, v, cloud_.points[nrp].x, cloud_.points[nrp].y, cloud_.points[nrp].z))
           continue;
@@ -249,9 +249,9 @@ void
   {
     float bad_point = std::numeric_limits<float>::quiet_NaN ();
     // Assemble an awesome sensor_msgs/PointCloud2 message
-    for (int u = 0; u < width_; u += 2) 
+    for (int u = 0; u < width_; ++u) 
     {
-      for (int v = 0; v < height_; v += 2)
+      for (int v = 0; v < height_; ++v)
       {
         float *pstep = (float*)&cloud2_.data[(v * width_ + u) * cloud2_.point_step];
         int d = 0;
@@ -342,8 +342,6 @@ void
 
   rgb_sent_   = true;
   depth_sent_ = true;
-
-  /// @todo Publish depth image for "stereo" calibration
 }
 
 void KinectDriver::configCb (Config &config, uint32_t level)
@@ -372,17 +370,13 @@ void KinectDriver::configCb (Config &config, uint32_t level)
 
 void KinectDriver::createDepthProjectionMatrix()
 {
-  //@todo - parametrize the scaling
-  int cloudHeight = height_/2;
-  int cloudWidth  = width_/2;
-
   image_geometry::PinholeCameraModel pcm;
   pcm.fromCameraInfo(depth_info_manager_->getCameraInfo());
 
-  depth_proj_matrix_ = new cv::Point3d[cloudHeight * cloudWidth];
+  depth_proj_matrix_ = new cv::Point3d[height_ * width_];
 
-  for (int y=0; y<height_; y+=2)
-	for (int x=0; x<width_ ; x+=2) 
+  for (int y=0; y<height_; ++y)
+	for (int x=0; x<width_ ; ++x) 
   {
     cv::Point2d rawPoint(x, y);
     cv::Point2d rectPoint;
@@ -395,7 +389,7 @@ void KinectDriver::createDepthProjectionMatrix()
     // so we need to renormalize the vector to z = 1.0;
     rectRay *= 1.0/rectRay.z;
 
-    depth_proj_matrix_[(y/2)*cloudWidth + x/2] = rectRay;
+    depth_proj_matrix_[y*width_ + x] = rectRay;
   }
 }
 
@@ -417,8 +411,7 @@ inline bool KinectDriver::getPoint3D (freenect_depth *buf, int u, int v, float &
   if (range > config_.max_range || range <= 0)
     return (false);  
 
-  //@todo - parametrize the scaling
-  cv::Point3d rectRay = depth_proj_matrix_[(v/2)*(width_/2) + u/2];
+  cv::Point3d rectRay = depth_proj_matrix_[v*width_ + u];
   rectRay *= range;
   x = rectRay.x;
   y = rectRay.y;
