@@ -51,9 +51,10 @@
 #include <sensor_msgs/CameraInfo.h>
 
 #include <ros/ros.h>
-#include <ros/package.h>
 #include <camera_info_manager/camera_info_manager.h>
 #include <image_transport/image_transport.h>
+#include <dynamic_reconfigure/server.h>
+#include <kinect_camera/KinectConfig.h>
 
 extern "C" 
 {
@@ -118,6 +119,7 @@ namespace kinect_camera
       inline bool
         getPoint3D (freenect_depth *buf, int u, int v, float &x, float &y, float &z)
       {
+        /// @todo Move this function into .cpp
         int reading = buf[v * width_ + u];
 
         if (reading  >= 2048 || reading <= 0) 
@@ -133,7 +135,7 @@ namespace kinect_camera
       
         double range = -325.616 / ((double)reading + -1084.61);
         
-        if (range > max_range_ || range <= 0)
+        if (range > config_.max_range || range <= 0)
           return (false);
 
         x *= range;
@@ -153,10 +155,15 @@ namespace kinect_camera
       /** \brief Camera info manager objects. */
       boost::shared_ptr<CameraInfoManager> rgb_info_manager_, depth_info_manager_;
 
+      /** \brief Dynamic reconfigure. */
+      typedef kinect_camera::KinectConfig Config;
+      typedef dynamic_reconfigure::Server<Config> ReconfigureServer;
+      ReconfigureServer reconfigure_server_;
+      Config config_;
+
       /** \brief Camera parameters. */
       int width_;
       int height_;
-      double max_range_;
 
       /** \brief The horizontal field of view (in radians). */
       const static double horizontal_fov_ = 57.0 * M_PI / 180.0;
@@ -182,6 +189,9 @@ namespace kinect_camera
       bool depth_sent_;
       bool rgb_sent_; 
 
+      /** \brief Callback for dynamic_reconfigure */
+      void configCb (Config &config, uint32_t level);
+    
       static void depthCbInternal (freenect_device *dev, freenect_depth *buf, uint32_t timestamp);
 
       static void rgbCbInternal (freenect_device *dev, freenect_pixel *buf, uint32_t timestamp);

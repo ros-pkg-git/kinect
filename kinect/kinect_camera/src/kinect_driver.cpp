@@ -39,17 +39,22 @@
  */
 
 #include "kinect_camera/kinect.h"
+#include <sensor_msgs/image_encodings.h>
 #include <boost/make_shared.hpp>
 
 namespace kinect_camera {
 
 /** \brief Constructor */
 KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
-  : width_ (640), height_ (480),
+  : reconfigure_server_(param_nh),
+    width_ (640), height_ (480),
+    f_ctx_(NULL), f_dev_(NULL),
     depth_sent_ (false), rgb_sent_ (false)
 {
-  param_nh.param ("max_range", max_range_, 5.0);
-
+  // Set up reconfigure server
+  ReconfigureServer::CallbackType f = boost::bind(&KinectDriver::configCb, this, _1, _2);
+  reconfigure_server_.setCallback(f);
+  
   // Assemble the point cloud data
   std::string kinect_depth_frame;
   param_nh.param ("kinect_depth_frame", kinect_depth_frame, std::string("/kinect_depth"));
@@ -58,7 +63,8 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   cloud_.channels[0].name = "rgb";
   cloud_.channels[0].values.resize (0);
 
-  cloud2_.height = height_; cloud2_.width = width_;
+  cloud2_.height = height_;
+  cloud2_.width = width_;
   cloud2_.fields.resize (4);
   cloud2_.fields[0].name = "x";
   cloud2_.fields[1].name = "y";
@@ -84,12 +90,8 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   std::string kinect_RGB_frame;
   param_nh.param ("kinect_rgb_frame", kinect_RGB_frame, std::string("/kinect_rgb"));
   image_.header.frame_id = kinect_RGB_frame;
-
   image_.height = height_;
   image_.width = width_;
-  image_.encoding = "rgb8";
-  image_.step = width_ * 3;
-  image_.data.resize (width_ * height_ * 3);
   rgb_info_.header.frame_id = image_.header.frame_id; 
 
   // Read calibration parameters from disk
@@ -153,7 +155,8 @@ bool
   freenect_set_user(f_dev_, this);
   freenect_set_depth_callback (f_dev_, &KinectDriver::depthCbInternal);
   freenect_set_rgb_callback (f_dev_, &KinectDriver::rgbCbInternal);
-  freenect_set_rgb_format (f_dev_, FREENECT_FORMAT_RGB);
+  freenect_set_rgb_format (f_dev_, (freenect_rgb_format)config_.color_format);
+  freenect_set_led(f_dev_, (freenect_led_options)config_.led);
 
   return (true);
 }
@@ -275,7 +278,7 @@ void
   if (pub_rgb_.getNumSubscribers () > 0)
   {
     // Copy the image data
-    memcpy (&image_.data[0], &rgb[0], width_ * height_ * 3);
+    memcpy (&image_.data[0], &rgb[0], image_.data.size());
 
     // Check the camera info
     if (rgb_info_.height != (size_t)image_.height || rgb_info_.width != (size_t)image_.width)
@@ -312,6 +315,30 @@ void
   depth_sent_ = true;
 
   /// @todo Publish depth image for "stereo" calibration
+}
+
+void KinectDriver::configCb (Config &config, uint32_t level)
+{
+  /// @todo Integrate init() in here, so can change device and not worry about first config call
+  
+  // Configure color output to be RGB or Bayer
+  /// @todo Mucking with image_ here might not be thread-safe
+  if (config.color_format == FREENECT_FORMAT_RGB) {
+    image_.encoding = sensor_msgs::image_encodings::RGB8;
+    image_.data.resize(FREENECT_RGB_SIZE);
+    image_.step = FREENECT_FRAME_W * 3;
+  }
+  else {
+    image_.encoding = sensor_msgs::image_encodings::BAYER_GRBG8;
+    image_.data.resize(FREENECT_BAYER_SIZE);
+    image_.step = FREENECT_FRAME_W;
+  }
+  if (f_dev_) {
+    freenect_set_rgb_format(f_dev_, (freenect_rgb_format)config.color_format);
+    freenect_set_led(f_dev_, (freenect_led_options)config.led);
+  }
+  
+  config_ = config;
 }
 
 } // namespace kinect_camera

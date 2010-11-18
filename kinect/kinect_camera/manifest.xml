@@ -10,7 +10,7 @@
 
   </description>
 
-  <author>Ivan Dryanovski, William Morris, Stéphane Magnenat, Radu Bogdan Rusu</author>
+  <author>Ivan Dryanovski, William Morris, Stéphane Magnenat, Radu Bogdan Rusu, Patrick Mihelich</author>
 
   <license>BSD</license>
 
@@ -24,6 +24,7 @@
   <depend package="image_transport" />
   <depend package="sensor_msgs" />
   <depend package="freenect" />
+  <depend package="dynamic_reconfigure" />
 
   <rosdep name="libusb"/>
 
