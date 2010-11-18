@@ -187,27 +187,12 @@ namespace kinect_camera
       //uint16_t *depth_buf_;
       /** \brief Buffer that holds the RGB values. */
       //uint8_t  *rgb_buf_;
+
+    static void depthCbInternal (freenect_device *dev, freenect_depth *buf, uint32_t timestamp);
+
+    static void rgbCbInternal (freenect_device *dev, freenect_pixel *buf, uint32_t timestamp);
   };
 
-  KinectDriver* kinect_driver_global;
-   
-  inline void 
-    globalDepthCb (freenect_device *dev, freenect_depth *buf, uint32_t timestamp)
-  {
-    if (kinect_driver_global)
-      kinect_driver_global->depthCb (dev, buf, timestamp);
-    else
-      ROS_ERROR ("[globalDepthCb] KinectDriver not initialized!");
-  }
-
-  inline void 
-    globalrgbCb (freenect_device *dev, freenect_pixel *buf, uint32_t timestamp)
-  {
-    if (kinect_driver_global)
-      kinect_driver_global->rgbCb (dev, buf, timestamp);
-    else
-      ROS_ERROR ("[globalDepthCb] KinectDriver not initialized!");
-  }
-}
+} // namespace kinect_camera
 
 #endif //KINECT_NODE_KINECT_H_

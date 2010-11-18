@@ -40,14 +40,12 @@
 
 #include "kinect_camera/kinect.h"
 
+namespace kinect_camera {
 
 /** \brief Constructor */
-kinect_camera::KinectDriver::KinectDriver (const ros::NodeHandle &nh) : nh_ (nh), width_ (640), height_ (480), max_range_ (5.0), depth_sent_ (false), rgb_sent_ (false)
+KinectDriver::KinectDriver (const ros::NodeHandle &nh) : nh_ (nh), width_ (640), height_ (480), max_range_ (5.0), depth_sent_ (false), rgb_sent_ (false)
 {
   cam_info_manager_ = new CameraInfoManager (nh_);
-
-  // Workaround for libfreenect's C issues
-  kinect_driver_global = this;
 
   nh_.getParam ("max_range", max_range_);
   nh_.getParam ("width", width_);
@@ -125,7 +123,7 @@ kinect_camera::KinectDriver::KinectDriver (const ros::NodeHandle &nh) : nh_ (nh)
   * \param index the index of the device to initialize
   */
 bool
-  kinect_camera::KinectDriver::init (int index)
+  KinectDriver::init (int index)
 {
   // Initialize the USB 
   if (freenect_init (&f_ctx_, NULL) < 0)
@@ -156,24 +154,36 @@ bool
   }
 
   // Set the appropriate data callbacks
-  freenect_set_depth_callback (f_dev_, kinect_camera::globalDepthCb);
-  freenect_set_rgb_callback (f_dev_, kinect_camera::globalrgbCb);
+  freenect_set_user(f_dev_, this);
+  freenect_set_depth_callback (f_dev_, &KinectDriver::depthCbInternal);
+  freenect_set_rgb_callback (f_dev_, &KinectDriver::rgbCbInternal);
   freenect_set_rgb_format (f_dev_, FREENECT_FORMAT_RGB);
 
   return (true);
 }
 
+void KinectDriver::depthCbInternal (freenect_device *dev, freenect_depth *buf, uint32_t timestamp)
+{
+  KinectDriver* driver = reinterpret_cast<KinectDriver*>(freenect_get_user(dev));
+  driver->depthCb(dev, buf, timestamp);
+}
+
+void KinectDriver::rgbCbInternal (freenect_device *dev, freenect_pixel *buf, uint32_t timestamp)
+{
+  KinectDriver* driver = reinterpret_cast<KinectDriver*>(freenect_get_user(dev));
+  driver->rgbCb(dev, buf, timestamp);
+}
+
 /** \brief Destructor */
-kinect_camera::KinectDriver::~KinectDriver ()
+KinectDriver::~KinectDriver ()
 {
   freenect_close_device (f_dev_);
   freenect_shutdown (f_ctx_);
-  kinect_driver_global = NULL;
 }
 
 /** \brief Start (resume) the data acquisition process. */
 void 
-  kinect_camera::KinectDriver::start ()
+  KinectDriver::start ()
 {
   freenect_start_depth (f_dev_);
   freenect_start_rgb (f_dev_);
@@ -181,7 +191,7 @@ void
 
 /** \brief Stop (pause) the data acquisition process. */
 void 
-  kinect_camera::KinectDriver::stop ()
+  KinectDriver::stop ()
 {
   freenect_stop_depth (f_dev_);
   freenect_stop_rgb (f_dev_);
@@ -193,7 +203,7 @@ void
   * \param timestamp the time when the data was acquired
   */
 void 
-  kinect_camera::KinectDriver::depthCb (freenect_device *dev, freenect_depth *buf, uint32_t timestamp)
+  KinectDriver::depthCb (freenect_device *dev, freenect_depth *buf, uint32_t timestamp)
 {
   boost::mutex::scoped_lock lock (buffer_mutex_);
 
@@ -260,7 +270,7 @@ void
   * \param timestamp the time when the data was acquired
   */
 void 
-  kinect_camera::KinectDriver::rgbCb (freenect_device *dev, freenect_pixel *rgb, uint32_t timestamp)
+  KinectDriver::rgbCb (freenect_device *dev, freenect_pixel *rgb, uint32_t timestamp)
 {
   boost::mutex::scoped_lock lock (buffer_mutex_);
 
@@ -282,8 +292,9 @@ void
 }
 
 void 
-  kinect_camera::KinectDriver::publish ()
+  KinectDriver::publish ()
 {
+  /// @todo Do something with the timestamps from the device
   // Get the current time
   ros::Time time = ros::Time::now ();
 	cloud_.header.stamp = cloud2_.header.stamp = time;
@@ -302,3 +313,5 @@ void
   rgb_sent_   = true;
   depth_sent_ = true;
 }
+
+} // namespace kinect_camera
