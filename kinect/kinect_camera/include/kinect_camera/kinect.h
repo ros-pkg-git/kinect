@@ -51,6 +51,7 @@
 #include <sensor_msgs/CameraInfo.h>
 
 #include <ros/ros.h>
+#include <ros/package.h>
 #include <camera_info_manager/camera_info_manager.h>
 #include <image_transport/image_transport.h>
 #include <dynamic_reconfigure/server.h>
@@ -155,7 +156,7 @@ namespace kinect_camera
 
       /// @todo May actually want to allocate each time when using nodelets
       /** \brief Image data. */
-      sensor_msgs::Image image_;
+      sensor_msgs::Image rgb_image_, depth_image_;
       /** \brief PointCloud data. */
       sensor_msgs::PointCloud cloud_;
       /** \brief PointCloud2 data. */
@@ -186,6 +187,12 @@ namespace kinect_camera
         * \param reading the raw reading in the depth buffer
         */
       inline double getDistanceFromReading(freenect_depth reading) const;
+
+      /** \brief Fills in the depth_image_ data with color from the depth buffer.
+        * The color is linear with the z-depth of the pixel, scaling up to max_range_
+        * \param buf the depth buffer
+        */
+      void depthBufferTo8BitImage(const freenect_depth * buf);
   };
 
 } // namespace kinect_camera
