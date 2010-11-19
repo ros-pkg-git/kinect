@@ -89,19 +89,19 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
 
   // Assemble the depth image data
   depth_image_.header.frame_id = kinect_depth_frame;
-	depth_image_.height = height_;
-	depth_image_.width = width_;
-	depth_image_.encoding = "mono8";
-	depth_image_.step = width_;
+  depth_image_.height = height_;
+  depth_image_.width = width_;
+  depth_image_.encoding = "mono8";
+  depth_image_.step = width_;
   depth_image_.data.resize(width_ * height_);
 
   // Assemble the image data
   std::string kinect_RGB_frame;
   param_nh.param ("kinect_rgb_frame", kinect_RGB_frame, std::string ("/kinect_rgb"));
-  image_.header.frame_id = kinect_RGB_frame;
-  image_.height = height_;
-  image_.width = width_;
-  rgb_info_.header.frame_id = image_.header.frame_id; 
+  rgb_image_.header.frame_id = kinect_RGB_frame;
+  rgb_image_.height = height_;
+  rgb_image_.width = width_;
+  rgb_info_.header.frame_id = rgb_image_.header.frame_id; 
 
   // Read calibration parameters from disk
   std::string cam_name, rgb_info_url, depth_info_url;
