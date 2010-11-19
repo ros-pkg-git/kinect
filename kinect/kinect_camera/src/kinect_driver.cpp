@@ -42,7 +42,8 @@
 #include <sensor_msgs/image_encodings.h>
 #include <boost/make_shared.hpp>
 
-namespace kinect_camera {
+namespace kinect_camera 
+{
 
 /** \brief Constructor */
 KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
@@ -58,7 +59,7 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   
   // Assemble the point cloud data
   std::string kinect_depth_frame;
-  param_nh.param ("kinect_depth_frame", kinect_depth_frame, std::string("/kinect_depth"));
+  param_nh.param ("kinect_depth_frame", kinect_depth_frame, std::string ("/kinect_depth"));
   cloud_.header.frame_id = cloud2_.header.frame_id = kinect_depth_frame;
   cloud_.channels.resize (1);
   cloud_.channels[0].name = "rgb";
@@ -89,7 +90,7 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
 
   // Assemble the image data
   std::string kinect_RGB_frame;
-  param_nh.param ("kinect_rgb_frame", kinect_RGB_frame, std::string("/kinect_rgb"));
+  param_nh.param ("kinect_rgb_frame", kinect_RGB_frame, std::string ("/kinect_rgb"));
   image_.header.frame_id = kinect_RGB_frame;
   image_.height = height_;
   image_.width = width_;
@@ -98,8 +99,8 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   // Read calibration parameters from disk
   std::string cam_name, rgb_info_url, depth_info_url;
   param_nh.param ("camera_name", cam_name, std::string("camera"));
-  param_nh.param ("rgb/camera_info_url", rgb_info_url, std::string());
-  param_nh.param ("depth/camera_info_url", depth_info_url, std::string());
+  param_nh.param ("rgb/camera_info_url", rgb_info_url, std::string ());
+  param_nh.param ("depth/camera_info_url", depth_info_url, std::string ());
   ROS_INFO ("[KinectDriver] Calibration URLs:\n\tRGB: %s\n\tDepth: %s",
             rgb_info_url.c_str (), depth_info_url.c_str ());
 
