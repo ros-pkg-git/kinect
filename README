@@ -1,3 +1,9 @@
+Prerequisites:
+ros stacks common, common_msgs, drivers_common, image_common, ros, ros_comm
+See www.ros.org/wiki/Installation
+If already setup:
+sudo apt-get install ros-unstable-image-common ros-unstable-drivers-common
+
 Create kinect.rosinstall
 """
 - git:
