@@ -10,6 +10,9 @@ Create kinect.rosinstall
 rosinstall ~/kinect_dev /opt/ros/unstable kinect.rosinstall
 . ~/kinect_dev/setup.sh
 
+If you want write access use the following in ~/kinect_dev:
+git remote set-url origin git@github.com:ros-pkg-git/kinect.git
+
 For now call `git submodule update --init --recursive` to pull in libfreenect
 Patch for rosinstall coming https://code.ros.org/trac/ros/ticket/3146
 
