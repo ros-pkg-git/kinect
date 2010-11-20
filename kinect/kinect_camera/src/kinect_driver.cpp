@@ -403,8 +403,18 @@ void KinectDriver::createDepthProjectionMatrix()
 
 inline double KinectDriver::getDistanceFromReading(freenect_depth reading) const
 {
-  // refer to calibration here: http://www.ros.org/wiki/kinect_node
-  return -325.616 / ((double)reading + -1084.61);
+  // The formula is Z = T*R/(T - dX), where:
+  //   - Z is the distance from the camera
+  //   - T is the baseline between the depth camera and IR projector
+  //   - R is the distance to the plane of the reference image captured during factory calibration
+  //   - dX is the calculated pattern shift in the reference plane
+  // If we assume the reading r is linearly related to dX (e.g. is the disparity) by some scaling
+  // and offset, we need to fit parameters A and B such that Z = A / (B - r).
+  // See data points at: http://www.ros.org/wiki/kinect_node
+  /// @todo Make A and B calibration parameters of some sort.
+  static const double A = 325.616;
+  static const double B = 1084.61;
+  return A / (B - reading);
 }
 
 inline bool KinectDriver::getPoint3D (freenect_depth *buf, int u, int v, float &x, float &y, float &z) const
@@ -430,7 +440,7 @@ inline bool KinectDriver::getPoint3D (freenect_depth *buf, int u, int v, float &
 
 void KinectDriver::depthBufferTo8BitImage(const freenect_depth * buf)
 {
-	for (int y=0; y<height_; ++y)
+  for (int y=0; y<height_; ++y)
   for (int x=0; x<width_;  ++x) 
   {
     int index(y*width_ + x);
