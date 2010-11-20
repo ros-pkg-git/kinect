@@ -16,8 +16,10 @@ Create kinect.rosinstall
 rosinstall ~/kinect_dev /opt/ros/unstable kinect.rosinstall
 . ~/kinect_dev/setup.sh
 
-If you want write access use the following in ~/kinect_dev/kinect:
+=== If you want write access use the following in ~/kinect_dev/kinect: ===
 git remote set-url origin git@github.com:ros-pkg-git/kinect.git
+  * Please be careful about updating the reference freenect/libfreenect. This url encodes which version of libfreenect to checkout.  
+
 
 For now call `git submodule update --init --recursive` to pull in libfreenect
 Patch for rosinstall coming https://code.ros.org/trac/ros/ticket/3146
@@ -30,7 +32,9 @@ To use the kinect you will have to give yourself permissions on the USB ports /d
 A brute force approach is:
 sudo chmod 777 -R /dev/bus/usb
 
-If you want to write back to ros-pkg-git/libfreenect
+
+
+=== If you want to write back to ros-pkg-git/libfreenect ===
 roscd freenect/libfreenect && git remote set-url git@github.com:ros-pkg-git/libfreenect.git
 
 Note: When committing to ros-pkg-git/libfreenect always:
