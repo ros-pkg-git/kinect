@@ -39,4 +39,4 @@ roscd freenect/libfreenect && git remote set-url git@github.com:ros-pkg-git/libf
 
 Note: When committing to ros-pkg-git/libfreenect always:
 1) sign your commits.  See http://openkinect.org/wiki/Contributing_Code#Sign_your_work
-2) We default to the ros branch, not in master.  There's a lot going on in the master branch, we'll leave it available for upstream integration.  
+2) We default to the ros branch, not in master.  There's a lot going on in the master branch, we'll leave it available for upstream integration.  Remember to 'git checkout ros' before working.  
