@@ -1,0 +1,24 @@
+# From Nicolas Burrus, Mailing List, Nov 20
+image_width: 640
+image_height: 480
+camera_name: camera
+camera_matrix:
+   rows: 3
+   cols: 3
+   data: [ 5.9421480358642339e+02, 0., 3.3930546187516956e+02, 0.,
+       5.9104092248505947e+02, 2.4273843891390746e+02, 0., 0., 1. ]
+distortion_coefficients:
+   rows: 1
+   cols: 5
+   data: [ -2.6389095690190378e-01, 9.9983033880181316e-01,
+       -7.6323952014484080e-04, 5.0337278410637169e-03,
+       -1.3056496956879815e+00 ]
+rectification_matrix:
+   rows: 3
+   cols: 3
+   data: [ 1., 0., 0., 0., 1., 0., 0., 0., 1. ]
+projection_matrix:
+   rows: 3
+   cols: 4
+   data: [ 5.94214355e+02, 0., 3.39307800e+02, 0., 0., 5.91040527e+02,
+       2.42739136e+02, 0., 0., 0., 1., 0. ]
