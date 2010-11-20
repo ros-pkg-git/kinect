@@ -21,6 +21,8 @@ rosmake --rosdep-install kinect
 
 
 To use the kinect you will have to give yourself permissions on the USB ports /dev/bus/usb/*
+A brute force approach is:
+sudo chmod 777 -R /dev/bus/usb
 
 If you want to write back to ros-pkg-git/libfreenect
 roscd freenect/libfreenect && git remote set-url git@github.com:ros-pkg-git/libfreenect.git
