@@ -1,7 +1,13 @@
 <stack>
-  <description brief="kinect">kinect</description>
-  <author>Maintained by Tully Foote and Radu Bogdan Rusu</author>
-  <license>BSD</license>  
+  <description brief="The ROS Kinect project">
+  
+    ROS Kinect is a project focused on the integration of the Microsoft Kinect
+    sensor with ROS. The kinect ROS stack contains low-level drivers,
+    visualization launch files, and PCL/OpenCV tutorials/demos.
+  
+  </description>
+  <author>Maintained by Radu Bogdan Rusu, Tully Foote, Patrick Mihelich, Melonee Wise</author>
+  <license>BSD</license>
   <review status="unreviewed" notes=""/>
   <url>http://ros.org/wiki/kinect</url>
   <depend stack="common" /> <!-- nodelet -->
@@ -9,5 +15,4 @@
   <depend stack="driver_common" /> <!-- dynamic_reconfigure -->
   <depend stack="image_common" /> <!-- camera_info_manager, image_transport -->
   <depend stack="ros" /> <!-- roscpp -->
-
 </stack>
