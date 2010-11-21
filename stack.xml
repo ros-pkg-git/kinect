@@ -1,18 +1,22 @@
 <stack>
   <description brief="The ROS Kinect project">
   
-    ROS Kinect is a project focused on the integration of the Microsoft Kinect
-    sensor with ROS. The kinect ROS stack contains low-level drivers,
-    visualization launch files, and PCL/OpenCV tutorials/demos.
+    ROS Kinect is an open source project focused on the integration of the
+    Microsoft Kinect sensor with ROS. The kinect ROS stack contains low-level
+    drivers, visualization launch files, and PCL/OpenCV tutorials/demos.
   
   </description>
   <author>Maintained by Radu Bogdan Rusu, Tully Foote, Patrick Mihelich, Melonee Wise</author>
-  <license>BSD</license>
+  <license>BSD</license>  
   <review status="unreviewed" notes=""/>
-  <url>http://ros.org/wiki/kinect</url>
+  <url>http://ros.org/wiki/ros-pkg-git</url>
+  <depend stack="camera_drivers" /> <!-- camera_info_manager -->
   <depend stack="common" /> <!-- nodelet -->
   <depend stack="common_msgs" /> <!-- sensor_msgs -->
   <depend stack="driver_common" /> <!-- dynamic_reconfigure -->
-  <depend stack="image_common" /> <!-- camera_info_manager, image_transport -->
+  <depend stack="image_common" /> <!-- image_transport -->
+  <depend stack="point_cloud_perception" /> <!-- pcl -->
   <depend stack="ros" /> <!-- roscpp -->
+  <depend stack="vision_opencv" /> <!-- image_geometry -->
+
 </stack>
