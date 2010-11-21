@@ -63,7 +63,7 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   cloud_.header.frame_id = cloud2_.header.frame_id = kinect_depth_frame;
   cloud_.channels.resize (1);
   cloud_.channels[0].name = "rgb";
-  cloud_.channels[0].values.resize (0);
+  cloud_.channels[0].values.resize (width_ * height_);
 
   cloud2_.height = height_;
   cloud2_.width = width_;
