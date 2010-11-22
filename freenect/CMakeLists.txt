@@ -33,7 +33,7 @@ set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 execute_process(COMMAND cmake -E chdir ${PROJECT_SOURCE_DIR} make -f Makefile.libfreenect
                 RESULT_VARIABLE _make_failed)
 if(_make_failed)
-  message(FATAL_ERROR "Build of Bullet failed")
+  message(FATAL_ERROR "Download of libfreenect failed")
 endif(_make_failed)
 
 

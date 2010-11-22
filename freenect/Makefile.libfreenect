@@ -5,11 +5,10 @@ GIT_URL = git://github.com/ros-pkg-git/libfreenect.git
 #GIT_PATCH = 
 GIT_REVISION=ros
 
-include $(shell rospack find mk)/svn_checkout.mk
+include $(shell rospack find mk)/git_checkout.mk
 
 
 .PHONY: build
-
 
 
 installed: wiped $(GIT_DIR)
@@ -26,3 +25,4 @@ clean:
 
 wipe: clean
 	-rm -rf build
+	-rm -rf $(GIT_DIR) 
