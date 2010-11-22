@@ -172,7 +172,8 @@ bool
   freenect_set_rgb_callback (f_dev_, &KinectDriver::rgbCbInternal);
   freenect_set_rgb_format (f_dev_, (freenect_rgb_format)config_.color_format);
   freenect_set_led(f_dev_, (freenect_led_options)config_.led);
-  freenect_set_tilt_degs(f_dev_, config_.tilt);
+  freenect_set_tilt_in_degrees(f_dev_, config_.tilt);
+
 
   return (true);
 }
@@ -370,7 +371,7 @@ void KinectDriver::configCb (Config &config, uint32_t level)
   if (f_dev_) {
     freenect_set_rgb_format(f_dev_, (freenect_rgb_format)config.color_format);
     freenect_set_led(f_dev_, (freenect_led_options)config.led);
-    freenect_set_tilt_degs(f_dev_, config.tilt);
+    freenect_set_tilt_in_degrees(f_dev_, config.tilt);
   }
   
   config_ = config;
