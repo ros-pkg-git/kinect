@@ -29,6 +29,14 @@ set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 #rosbuild_add_executable(example examples/example.cpp)
 #target_link_libraries(example ${PROJECT_NAME})
 
+# Download libfreenect
+execute_process(COMMAND cmake -E chdir ${PROJECT_SOURCE_DIR} make -f Makefile.libfreenect
+                RESULT_VARIABLE _make_failed)
+if(_make_failed)
+  message(FATAL_ERROR "Build of Bullet failed")
+endif(_make_failed)
+
+
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/libfreenect/c/Modules/")
 include_directories(libfreenect/c/include)
 include_directories(libfreenect/c/lib)

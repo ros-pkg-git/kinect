@@ -1,3 +1,0 @@
-[submodule "libfreenect"]
-	path = freenect/libfreenect
-	url = git://github.com/ros-pkg-git/libfreenect.git

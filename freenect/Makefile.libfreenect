@@ -1,0 +1,28 @@
+all: installed
+
+GIT_DIR = libfreenect
+GIT_URL = git://github.com/ros-pkg-git/libfreenect.git
+#GIT_PATCH = 
+GIT_REVISION=ros
+
+include $(shell rospack find mk)/svn_checkout.mk
+
+
+.PHONY: build
+
+
+
+installed: wiped $(GIT_DIR)
+	touch installed
+
+wiped: Makefile.libfreenect
+	make -f Makefile.libfreenect wipe
+	touch wiped
+
+clean:
+	rm -f installed
+	rm -fr lib include
+	-make -C $(GIT_DIR) clean
+
+wipe: clean
+	-rm -rf build
