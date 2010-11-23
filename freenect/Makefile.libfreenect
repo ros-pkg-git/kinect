@@ -11,12 +11,12 @@ include $(shell rospack find mk)/git_checkout.mk
 .PHONY: build
 
 
-installed: preclean $(GIT_DIR)
+installed: precleand $(GIT_DIR)
 	touch installed
 
-preclean: Makefile.libfreenect
+precleand: Makefile.libfreenect
 	make -f Makefile.libfreenect preclean
-	touch preclean
+	touch precleand
 
 clean:
 	rm -f installed
