@@ -1,4 +1,4 @@
 - git:
     local-name: kinect
     uri: https://github.com/ros-pkg-git/kinect.git
-    version: ros
+    version: master
