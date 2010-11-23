@@ -176,7 +176,7 @@ namespace kinect_camera
       /** \brief Callback for dynamic_reconfigure */
       void configCb (Config &config, uint32_t level);
     
-      static void depthCbInternal (freenect_device *dev, freenect_depth *buf, uint32_t timestamp);
+      static void depthCbInternal (freenect_device *dev, void *buf, uint32_t timestamp);
 
       static void rgbCbInternal (freenect_device *dev, freenect_pixel *buf, uint32_t timestamp);
 

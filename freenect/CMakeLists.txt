@@ -33,6 +33,8 @@ set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/libfreenect/cmake_modules/")
 # Set up installation directories
 include (SetupDirectories)
+# Find packages needed to build library
+find_package(libusb-1.0 REQUIRED)
 
 # Download libfreenect
 execute_process(COMMAND cmake -E chdir ${PROJECT_SOURCE_DIR} make -f Makefile.libfreenect

@@ -178,10 +178,11 @@ bool
   return (true);
 }
 
-void KinectDriver::depthCbInternal (freenect_device *dev, freenect_depth *buf, uint32_t timestamp)
+void KinectDriver::depthCbInternal (freenect_device *dev, void *buf, uint32_t timestamp)
 {
+  freenect_depth* tbuf = reinterpret_cast<freenect_depth*>(buf);
   KinectDriver* driver = reinterpret_cast<KinectDriver*>(freenect_get_user(dev));
-  driver->depthCb(dev, buf, timestamp);
+  driver->depthCb(dev, tbuf, timestamp);
 }
 
 void KinectDriver::rgbCbInternal (freenect_device *dev, freenect_pixel *buf, uint32_t timestamp)

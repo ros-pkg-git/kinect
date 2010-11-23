@@ -9,7 +9,7 @@
   <url>http://ros.org/wiki/freenect</url>
 
   <export>
-    <cpp cflags="-I${prefix}/libfreenect/include" lflags="-Wl,-rpath,${prefix}/lib -L${prefix}/lib -lfreenect"/>
+    <cpp cflags="-I${prefix}/libfreenect/include" lflags="-Wl,-rpath,${prefix}/lib -L${prefix}/lib -lfreenect -lusb-1.0"/>
   </export>
 
   <rosdep name="libusb1.0"/>
