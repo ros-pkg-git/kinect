@@ -13,12 +13,12 @@ include $(shell rospack find mk)/git_checkout.mk
 update: installed
 	cd libfreenect && git pull
 
-installed: precleand $(GIT_DIR)
+installed: precleaned $(GIT_DIR)
 	touch installed
 
-precleand: Makefile.libfreenect
+precleaned: Makefile.libfreenect
 	make -f Makefile.libfreenect preclean
-	touch precleand
+	touch precleaned
 
 clean:
 	rm -f installed
