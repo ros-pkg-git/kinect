@@ -29,19 +29,19 @@ set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 #rosbuild_add_executable(example examples/example.cpp)
 #target_link_libraries(example ${PROJECT_NAME})
 
-## From freenect
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/libfreenect/cmake_modules/")
-# Set up installation directories
-include (SetupDirectories)
-# Find packages needed to build library
-find_package(libusb-1.0 REQUIRED)
-
 # Download libfreenect
 execute_process(COMMAND cmake -E chdir ${PROJECT_SOURCE_DIR} make -f Makefile.libfreenect
                 RESULT_VARIABLE _make_failed)
 if(_make_failed)
   message(FATAL_ERROR "Download of libfreenect failed")
 endif(_make_failed)
+
+## From freenect
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/libfreenect/cmake_modules/")
+# Set up installation directories
+include (SetupDirectories)
+# Find packages needed to build library
+find_package(libusb-1.0 REQUIRED)
 
 
 include_directories(libfreenect/include)
