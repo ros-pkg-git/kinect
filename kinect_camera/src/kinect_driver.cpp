@@ -346,19 +346,13 @@ void
   // Reusing rgb_image_ for now
   //rgb_sent_ = false;
 
-  int min_val = 1 << 16;
-  int max_val = 0;
   if (pub_ir_.getNumSubscribers () > 0)
   {
     /// @todo Publish original 16-bit output? Shifting down to 8-bit for convenience for now
     for (int i = 0; i < FREENECT_FRAME_PIX; ++i) {
       int val = rgb[i];
-      min_val = std::min(min_val, val);
-      max_val = std::max(max_val, val);
-      //rgb_image_.data[i] = (val >> 2) & 0xff;
-      rgb_image_.data[i] = std::min(val * 5, 255);
+      rgb_image_.data[i] = (val >> 2) & 0xff;
     }
-    ROS_INFO("Min: %d, max: %d", min_val, max_val);
 
     pub_ir_.publish(rgb_image_, depth_info_);
   }
