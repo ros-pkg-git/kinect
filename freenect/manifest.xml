@@ -13,6 +13,7 @@
   </export>
 
   <rosdep name="libusb1.0"/>
+  <rosdep name="git"/>
 
 </package>
 
