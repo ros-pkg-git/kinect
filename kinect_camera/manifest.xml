@@ -29,8 +29,6 @@
   <depend package="freenect" />
   <depend package="dynamic_reconfigure" />
 
-  <rosdep name="libusb"/>
-
   <export>
     <cpp cflags="-I${prefix}/include" lflags="-Wl,-rpath,${prefix}/lib -L${prefix}/lib -lkinect_driver -lkinect_driver_nodelets" />
     <nodelet plugin="${prefix}/kinect_nodelets.xml" />
