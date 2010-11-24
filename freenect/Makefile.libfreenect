@@ -1,4 +1,4 @@
-all: installed
+all: update
 
 GIT_DIR = libfreenect
 GIT_URL = git://github.com/ros-pkg-git/libfreenect.git
@@ -10,6 +10,8 @@ include $(shell rospack find mk)/git_checkout.mk
 
 .PHONY: build
 
+update: installed
+	cd libfreenect && git pull
 
 installed: precleand $(GIT_DIR)
 	touch installed
@@ -24,7 +26,9 @@ clean:
 	-make -C $(GIT_DIR) clean
 
 preclean: clean
-	-rm -rf $(GIT_DIR) 
+	-rm -rf $(GIT_DIR)_backup 
+	-echo "BACKING UP $(GIT_DIR) to $(GIT_DIR)_backup" 
+	-mv $(GIT_DIR) $(GIT_DIR)_backup
 
 wipe: clean
 	-rm -rf build
