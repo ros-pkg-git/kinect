@@ -1,2 +1,9 @@
 libusb1.0:
   ubuntu: libusb-1.0-0-dev
+git: 
+  ubuntu: git-core
+  debian: git-core
+  fedora: git
+  macports: git-core
+  gentoo: dev-vcs/git
+  freebsd: git
