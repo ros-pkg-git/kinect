@@ -3,7 +3,7 @@
 
     A general purpose ROS driver for the Microsoft XBOX 360 Kinect sensor. The driver publishes:
     <ul>
-      <li> RGB image data</li>
+      <li> RGB/IR image data</li>
       <li> depth data as PointCloud and PointCloud2</li>
       <li> ... </li>
     </ul>
