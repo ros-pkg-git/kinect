@@ -80,12 +80,20 @@ namespace kinect_camera
         * \param timestamp the time when the data was acquired
         */
       virtual void depthCb (freenect_device *dev, freenect_depth *buf, uint32_t timestamp);
+    
       /** \brief RGB callback. Virtual.
         * \param dev the Freenect device
         * \param buf the resultant output buffer
         * \param timestamp the time when the data was acquired
         */
       virtual void rgbCb   (freenect_device *dev, freenect_pixel *rgb, uint32_t timestamp);
+
+      /** \brief IR callback. Virtual.
+        * \param dev the Freenect device
+        * \param buf the resultant output buffer
+        * \param timestamp the time when the data was acquired
+        */
+      virtual void irCb    (freenect_device *dev, freenect_pixel_ir *rgb, uint32_t timestamp);
 
       /// @todo Replace explicit stop/start with subscriber callbacks
       /** \brief Start (resume) the data acquisition process. */
@@ -127,7 +135,7 @@ namespace kinect_camera
       boost::mutex buffer_mutex_;
 
       /** \brief ROS publishers. */
-      image_transport::CameraPublisher pub_rgb_, pub_depth_;
+      image_transport::CameraPublisher pub_rgb_, pub_depth_, pub_ir_;
       ros::Publisher pub_points_, pub_points2_;
 
       /** \brief Camera info manager objects. */
@@ -142,17 +150,15 @@ namespace kinect_camera
       /** \brief Camera parameters. */
       int width_;
       int height_;
-
-      /** \brief The horizontal field of view (in radians). */
-      const static double horizontal_fov_ = 57.0 * M_PI / 180.0;
-      /** \brief The vertical field of view (in radians). */
-      const static double vertical_fov_   = 43.0 * M_PI / 180.0;
       
       /** \brief Freenect context structure. */
       freenect_context *f_ctx_;
 
       /** \brief Freenect device structure. */
       freenect_device *f_dev_;
+
+      /** \brief True if we're acquiring images. */
+      bool started_;
 
       /// @todo May actually want to allocate each time when using nodelets
       /** \brief Image data. */
@@ -175,10 +181,14 @@ namespace kinect_camera
 
       /** \brief Callback for dynamic_reconfigure */
       void configCb (Config &config, uint32_t level);
+
+      void updateDeviceSettings();
     
       static void depthCbInternal (freenect_device *dev, void *buf, uint32_t timestamp);
 
       static void rgbCbInternal (freenect_device *dev, freenect_pixel *buf, uint32_t timestamp);
+
+      static void irCbInternal (freenect_device *dev, freenect_pixel_ir *buf, uint32_t timestamp);
 
       /** \brief Builds the depth rectification matrix from the camera info topic */
       void createDepthProjectionMatrix();

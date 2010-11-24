@@ -50,6 +50,7 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   : reconfigure_server_(param_nh),
     width_ (640), height_ (480),
     f_ctx_(NULL), f_dev_(NULL),
+    started_(false),
     depth_sent_ (false), rgb_sent_ (false), 
     have_depth_matrix_(false)
 {
@@ -128,6 +129,7 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   image_transport::ImageTransport it(comm_nh);
   pub_rgb_     = it.advertiseCamera ("rgb/image_raw", 1);
   pub_depth_   = it.advertiseCamera ("depth/image_raw", 1);
+  pub_ir_      = it.advertiseCamera ("ir/image_raw", 1);
   pub_points_  = comm_nh.advertise<sensor_msgs::PointCloud>("points", 15);
   pub_points2_ = comm_nh.advertise<sensor_msgs::PointCloud2>("points2", 15);
 }
@@ -169,11 +171,10 @@ bool
   // Set the appropriate data callbacks
   freenect_set_user(f_dev_, this);
   freenect_set_depth_callback (f_dev_, &KinectDriver::depthCbInternal);
-  freenect_set_rgb_callback (f_dev_, &KinectDriver::rgbCbInternal);
-  freenect_set_rgb_format (f_dev_, (freenect_rgb_format)config_.color_format);
-  freenect_set_led(f_dev_, (freenect_led_options)config_.led);
-  freenect_set_tilt_degs(f_dev_, config_.tilt);
-
+  freenect_set_rgb_callback   (f_dev_, &KinectDriver::rgbCbInternal);
+  freenect_set_ir_callback    (f_dev_, &KinectDriver::irCbInternal);
+  
+  updateDeviceSettings();
 
   return (true);
 }
@@ -191,6 +192,12 @@ void KinectDriver::rgbCbInternal (freenect_device *dev, freenect_pixel *buf, uin
   driver->rgbCb(dev, buf, timestamp);
 }
 
+void KinectDriver::irCbInternal (freenect_device *dev, freenect_pixel_ir *buf, uint32_t timestamp)
+{
+  KinectDriver* driver = reinterpret_cast<KinectDriver*>(freenect_get_user(dev));
+  driver->irCb(dev, buf, timestamp);
+}
+
 /** \brief Destructor */
 KinectDriver::~KinectDriver ()
 {
@@ -205,7 +212,11 @@ void
   KinectDriver::start ()
 {
   freenect_start_depth (f_dev_);
-  freenect_start_rgb (f_dev_);
+  if (config_.color_format == FREENECT_FORMAT_IR)
+    freenect_start_ir (f_dev_);
+  else
+    freenect_start_rgb (f_dev_);
+  started_ = true;
 }
 
 /** \brief Stop (pause) the data acquisition process. */
@@ -213,7 +224,11 @@ void
   KinectDriver::stop ()
 {
   freenect_stop_depth (f_dev_);
-  freenect_stop_rgb (f_dev_);
+  if (config_.color_format == FREENECT_FORMAT_IR)
+    freenect_stop_ir (f_dev_);
+  else
+    freenect_stop_rgb (f_dev_);
+  started_ = false;
 }
 
 /** \brief Depth callback. Virtual. 
@@ -323,6 +338,35 @@ void
     publish ();
 }
 
+void
+  KinectDriver::irCb (freenect_device *dev, freenect_pixel_ir *rgb, uint32_t timestamp)
+{
+  boost::mutex::scoped_lock lock (buffer_mutex_);
+
+  // Reusing rgb_image_ for now
+  //rgb_sent_ = false;
+
+  int min_val = 1 << 16;
+  int max_val = 0;
+  if (pub_ir_.getNumSubscribers () > 0)
+  {
+    /// @todo Publish original 16-bit output? Shifting down to 8-bit for convenience for now
+    for (int i = 0; i < FREENECT_FRAME_PIX; ++i) {
+      int val = rgb[i];
+      min_val = std::min(min_val, val);
+      max_val = std::max(max_val, val);
+      //rgb_image_.data[i] = (val >> 2) & 0xff;
+      rgb_image_.data[i] = std::min(val * 5, 255);
+    }
+    ROS_INFO("Min: %d, max: %d", min_val, max_val);
+
+    pub_ir_.publish(rgb_image_, depth_info_);
+  }
+
+  //if (!depth_sent_)
+  //  publish ();
+}
+
 void 
   KinectDriver::publish ()
 {
@@ -335,8 +379,12 @@ void
   rgb_image_.header.stamp   = rgb_info_.header.stamp   = time;
   depth_image_.header.stamp = depth_info_.header.stamp = time;
 
-  // Publish RGB Image
-  if (pub_rgb_.getNumSubscribers () > 0)
+  // Publish RGB or IR Image
+  if (config_.color_format == FREENECT_FORMAT_IR) {
+    if (pub_ir_.getNumSubscribers() > 0)
+      pub_ir_.publish(rgb_image_, depth_info_);
+  }
+  else if (pub_rgb_.getNumSubscribers () > 0)
     pub_rgb_.publish (rgb_image_, rgb_info_); 
 
   // Publish depth Image
@@ -364,18 +412,38 @@ void KinectDriver::configCb (Config &config, uint32_t level)
     rgb_image_.data.resize(FREENECT_RGB_SIZE);
     rgb_image_.step = FREENECT_FRAME_W * 3;
   }
-  else {
+  else if (config.color_format == FREENECT_FORMAT_BAYER) {
     rgb_image_.encoding = sensor_msgs::image_encodings::BAYER_GRBG8;
     rgb_image_.data.resize(FREENECT_BAYER_SIZE);
     rgb_image_.step = FREENECT_FRAME_W;
   }
-  if (f_dev_) {
-    freenect_set_rgb_format(f_dev_, (freenect_rgb_format)config.color_format);
-    freenect_set_led(f_dev_, (freenect_led_options)config.led);
-    freenect_set_tilt_degs(f_dev_, config.tilt);
+  else if (config.color_format == FREENECT_FORMAT_IR) {
+    rgb_image_.encoding = sensor_msgs::image_encodings::MONO8;
+    rgb_image_.data.resize(FREENECT_BAYER_SIZE);
+    rgb_image_.step = FREENECT_FRAME_W;
+  }
+  else {
+    ROS_ERROR("Unknown color format code %d", config.color_format);
   }
   
   config_ = config;
+  updateDeviceSettings();
+}
+
+void KinectDriver::updateDeviceSettings()
+{
+  if (f_dev_) {
+    freenect_set_rgb_format(f_dev_, (freenect_rgb_format)config_.color_format);
+    freenect_set_led(f_dev_, (freenect_led_options)config_.led);
+    freenect_set_tilt_degs(f_dev_, config_.tilt);
+
+    if (started_) {
+      if (config_.color_format == FREENECT_FORMAT_IR)
+        freenect_start_ir(f_dev_);
+      else
+        freenect_start_rgb(f_dev_);
+    }
+  }
 }
 
 void KinectDriver::createDepthProjectionMatrix()
