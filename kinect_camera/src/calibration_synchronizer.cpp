@@ -12,9 +12,15 @@ int main(int argc, char** argv)
   while (ros::ok()) {
     sensor_msgs::ImageConstPtr rgb = ros::topic::waitForMessage<sensor_msgs::Image>("rgb/image_raw", nh);
     sensor_msgs::ImageConstPtr ir  = ros::topic::waitForMessage<sensor_msgs::Image>("ir/image_raw", nh);
-    boost::const_pointer_cast<sensor_msgs::Image>(rgb)->header.stamp = ir->header.stamp;
-    pub_rgb.publish(rgb);
-    pub_ir.publish(ir);
-    ros::spinOnce();
+    double diff = (ir->header.stamp - rgb->header.stamp).toSec();
+    if (diff < 0.5) {
+      boost::const_pointer_cast<sensor_msgs::Image>(rgb)->header.stamp = ir->header.stamp;
+      pub_rgb.publish(rgb);
+      pub_ir.publish(ir);
+      ros::spinOnce();
+    }
+    else {
+      ROS_WARN("Rejected image pair, time difference %.2f seconds", diff);
+    }
   }
 }
