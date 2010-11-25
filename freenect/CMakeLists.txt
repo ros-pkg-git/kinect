@@ -47,5 +47,5 @@ find_package(libusb-1.0 REQUIRED)
 include_directories(libfreenect/include)
 include_directories(libfreenect/src)
 add_subdirectory(libfreenect/src)
-add_subdirectory(libfreenect/examples)
+#add_subdirectory(libfreenect/examples)
 
