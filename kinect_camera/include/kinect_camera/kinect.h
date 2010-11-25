@@ -49,6 +49,7 @@
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/CameraInfo.h>
+#include <sensor_msgs/Imu.h>
 
 #include <ros/ros.h>
 #include <ros/package.h>
@@ -112,12 +113,21 @@ namespace kinect_camera
       inline bool 
         ok ()
       {
+        freenect_raw_device_state *state;
+        freenect_update_device_state (f_dev_);
+        state = freenect_get_device_state (f_dev_);
+        freenect_get_mks_accel (state, &accel_x_, &accel_y_, &accel_z_);
+        tilt_angle_ = freenect_get_tilt_degs(state);
+        //ROS_INFO("tilt angle: %g", tilt_angle_);
+        publishImu();
         return (freenect_process_events (f_ctx_) >= 0);
       }
 
     protected:
       /** \brief Send the data over the network. */
       void publish ();
+
+      void publishImu();
 
       /** \brief Convert an index from the depth image to a 3D point and return
         * its XYZ coordinates.
@@ -137,6 +147,7 @@ namespace kinect_camera
       /** \brief ROS publishers. */
       image_transport::CameraPublisher pub_rgb_, pub_depth_, pub_ir_;
       ros::Publisher pub_points_, pub_points2_;
+      ros::Publisher pub_imu_;
 
       /** \brief Camera info manager objects. */
       boost::shared_ptr<CameraInfoManager> rgb_info_manager_, depth_info_manager_;
@@ -169,9 +180,17 @@ namespace kinect_camera
       sensor_msgs::PointCloud2 cloud2_;
       /** \brief Camera info data. */
       sensor_msgs::CameraInfo rgb_info_, depth_info_;
+      /** \brief Accelerometer data. */
+      sensor_msgs::Imu imu_msg_;
 
       bool depth_sent_;
       bool rgb_sent_; 
+
+      /** \brief Accelerometer data */
+      double accel_x_, accel_y_, accel_z_;
+
+      /** \brief Tilt sensor */
+      double tilt_angle_; // [deg]
 
       /** \brief Flag whether the rectification matrix has been created */
       bool have_depth_matrix_;
