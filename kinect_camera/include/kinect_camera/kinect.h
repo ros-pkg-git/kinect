@@ -179,6 +179,10 @@ namespace kinect_camera
       /** \brief Matrix of rectified projection vectors for depth camera */
       cv::Point3d * depth_proj_matrix_;
 
+      /** \brief Timer for switching between IR and color streams in calibration mode */
+      ros::Timer format_switch_timer_;
+      bool can_switch_stream_;
+
       /** \brief Callback for dynamic_reconfigure */
       void configCb (Config &config, uint32_t level);
 
@@ -203,6 +207,8 @@ namespace kinect_camera
         * \param buf the depth buffer
         */
       void depthBufferTo8BitImage(const freenect_depth * buf);
+
+      void formatSwitchCb(const ros::TimerEvent& e);
   };
 
 } // namespace kinect_camera

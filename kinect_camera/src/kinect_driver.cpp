@@ -52,7 +52,8 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
     f_ctx_(NULL), f_dev_(NULL),
     started_(false),
     depth_sent_ (false), rgb_sent_ (false), 
-    have_depth_matrix_(false)
+    have_depth_matrix_(false),
+    can_switch_stream_(false)
 {
   // Set up reconfigure server
   ReconfigureServer::CallbackType f = boost::bind(&KinectDriver::configCb, this, _1, _2);
@@ -132,6 +133,12 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   pub_ir_      = it.advertiseCamera ("ir/image_raw", 1);
   pub_points_  = comm_nh.advertise<sensor_msgs::PointCloud>("points", 15);
   pub_points2_ = comm_nh.advertise<sensor_msgs::PointCloud2>("points2", 15);
+
+  // Timer for switching between IR and color image streams when in calibration mode.
+  // libfreenect freezes if we try to do this in the image callbacks.
+  // Too short a period and the switching doesn't work (why?), 0.3s seems to be OK.
+  format_switch_timer_ = comm_nh.createTimer(ros::Duration(0.3), &KinectDriver::formatSwitchCb, this);
+  format_switch_timer_.stop();
 }
 
 /** \brief Initialize a Kinect device, given an index.
@@ -216,6 +223,10 @@ void
     freenect_start_ir (f_dev_);
   else
     freenect_start_rgb (f_dev_);
+  
+  if (config_.calibration_mode)
+    format_switch_timer_.start();
+  
   started_ = true;
 }
 
@@ -228,6 +239,9 @@ void
     freenect_stop_ir (f_dev_);
   else
     freenect_stop_rgb (f_dev_);
+
+  format_switch_timer_.stop();
+  
   started_ = false;
 }
 
@@ -334,8 +348,9 @@ void
   }
 
   // Publish only if we have a depth image too
-  if (!depth_sent_) 
+  if (!depth_sent_) {
     publish ();
+  }
 }
 
 void
@@ -344,7 +359,7 @@ void
   boost::mutex::scoped_lock lock (buffer_mutex_);
 
   // Reusing rgb_image_ for now
-  //rgb_sent_ = false;
+  rgb_sent_ = false;
 
   if (pub_ir_.getNumSubscribers () > 0)
   {
@@ -353,12 +368,27 @@ void
       int val = rgb[i];
       rgb_image_.data[i] = (val >> 2) & 0xff;
     }
-
-    pub_ir_.publish(rgb_image_, depth_info_);
   }
 
-  //if (!depth_sent_)
-  //  publish ();
+  if (!depth_sent_) {
+    publish ();
+  }
+}
+
+void KinectDriver::formatSwitchCb(const ros::TimerEvent& e)
+{
+  if (!can_switch_stream_)
+    return;
+  
+  if (config_.color_format == FREENECT_FORMAT_IR) {
+    config_.color_format = FREENECT_FORMAT_RGB;
+    configCb(config_, 0);
+  }
+  else {
+    config_.color_format = FREENECT_FORMAT_IR;
+    configCb(config_, 0);
+  }
+  can_switch_stream_ = false;
 }
 
 void 
@@ -393,6 +423,7 @@ void
 
   rgb_sent_   = true;
   depth_sent_ = true;
+  can_switch_stream_ = true;
 }
 
 void KinectDriver::configCb (Config &config, uint32_t level)
@@ -419,6 +450,11 @@ void KinectDriver::configCb (Config &config, uint32_t level)
   else {
     ROS_ERROR("Unknown color format code %d", config.color_format);
   }
+
+  if (config.calibration_mode && started_)
+    format_switch_timer_.start();
+  else
+    format_switch_timer_.stop();
   
   config_ = config;
   updateDeviceSettings();
@@ -432,10 +468,14 @@ void KinectDriver::updateDeviceSettings()
     freenect_set_tilt_degs(f_dev_, config_.tilt);
 
     if (started_) {
-      if (config_.color_format == FREENECT_FORMAT_IR)
+      if (config_.color_format == FREENECT_FORMAT_IR) {
+        freenect_stop_rgb(f_dev_); // just to get rid of log spew
         freenect_start_ir(f_dev_);
-      else
+      }
+      else {
+        freenect_stop_ir(f_dev_); // ditto
         freenect_start_rgb(f_dev_);
+      }
     }
   }
 }
