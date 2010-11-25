@@ -7,7 +7,7 @@
   
   </description>
   <author>Maintained by Radu Bogdan Rusu, Tully Foote, Patrick Mihelich, Melonee Wise</author>
-  <license>BSD</license>  
+  <license>BSD,Apache 2.0</license>  
   <review status="unreviewed" notes=""/>
   <url>http://ros.org/wiki/ros-pkg-git</url>
   <depend stack="camera_drivers" /> <!-- camera_info_manager -->
@@ -15,7 +15,6 @@
   <depend stack="common_msgs" /> <!-- sensor_msgs -->
   <depend stack="driver_common" /> <!-- dynamic_reconfigure -->
   <depend stack="image_common" /> <!-- image_transport -->
-  <depend stack="point_cloud_perception" /> <!-- pcl -->
   <depend stack="ros" /> <!-- roscpp -->
   <depend stack="vision_opencv" /> <!-- image_geometry -->
 
