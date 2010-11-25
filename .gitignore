@@ -5,3 +5,7 @@ doc
 .project
 .cproject
 Debug
+freenect/libfreenect
+*/bin/*
+*/lib/*
+build
