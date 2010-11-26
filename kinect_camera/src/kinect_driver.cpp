@@ -404,22 +404,23 @@ void
   depth_image_.header.stamp = depth_info_.header.stamp = time;
 
   // Publish RGB or IR Image
-  if (config_.color_format == FREENECT_FORMAT_IR) {
+  if (config_.color_format == FREENECT_FORMAT_IR)
+  {
     if (pub_ir_.getNumSubscribers() > 0)
-      pub_ir_.publish(rgb_image_, depth_info_);
+      pub_ir_.publish (boost::make_shared<const sensor_msgs::Image> (rgb_image_), boost::make_shared<const sensor_msgs::CameraInfo> (depth_info_));
   }
   else if (pub_rgb_.getNumSubscribers () > 0)
-    pub_rgb_.publish (rgb_image_, rgb_info_); 
+    pub_rgb_.publish (boost::make_shared<const sensor_msgs::Image> (rgb_image_), boost::make_shared<const sensor_msgs::CameraInfo> (rgb_info_)); 
 
   // Publish depth Image
   if (pub_depth_.getNumSubscribers () > 0)
-    pub_depth_.publish (depth_image_, depth_info_); 
+    pub_depth_.publish (boost::make_shared<const sensor_msgs::Image> (depth_image_), boost::make_shared<const sensor_msgs::CameraInfo> (depth_info_));
 
   // Publish the PointCloud messages
   if (pub_points_.getNumSubscribers () > 0)
-    pub_points_.publish  (cloud_);
+    pub_points_.publish  (boost::make_shared<const sensor_msgs::PointCloud> (cloud_));
   if (pub_points2_.getNumSubscribers () > 0)
-    pub_points2_.publish (cloud2_);
+    pub_points2_.publish (boost::make_shared<const sensor_msgs::PointCloud2> (cloud2_));
 
   rgb_sent_   = true;
   depth_sent_ = true;
