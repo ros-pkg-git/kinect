@@ -133,6 +133,7 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   pub_ir_      = it.advertiseCamera ("ir/image_raw", 1);
   pub_points_  = comm_nh.advertise<sensor_msgs::PointCloud>("points", 15);
   pub_points2_ = comm_nh.advertise<sensor_msgs::PointCloud2>("points2", 15);
+  pub_imu_ = comm_nh.advertise<sensor_msgs::Imu>("imu", 15);
 
   // Timer for switching between IR and color image streams when in calibration mode.
   // libfreenect freezes if we try to do this in the image callbacks.
@@ -425,6 +426,20 @@ void
   rgb_sent_   = true;
   depth_sent_ = true;
   can_switch_stream_ = true;
+}
+
+void KinectDriver::publishImu()
+{
+  imu_msg_.header.stamp = ros::Time::now();
+  imu_msg_.linear_acceleration.x = accel_x_;
+  imu_msg_.linear_acceleration.y = accel_y_;
+  imu_msg_.linear_acceleration.z = accel_z_;
+  imu_msg_.linear_acceleration_covariance[0] = imu_msg_.linear_acceleration_covariance[4]
+      = imu_msg_.linear_acceleration_covariance[8] = 0.01; // @todo - what should these be?
+  imu_msg_.angular_velocity_covariance[0] = -1; // indicates angular velocity not provided
+  imu_msg_.orientation_covariance[0] = -1; // indicates orientation not provided
+  if (pub_imu_.getNumSubscribers() > 0)
+    pub_imu_.publish(imu_msg_);
 }
 
 void KinectDriver::configCb (Config &config, uint32_t level)
