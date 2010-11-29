@@ -1,0 +1,26 @@
+<package>
+  <description brief="PCL (Point Cloud Library) interface to the Kinect sensor">
+
+    * A specific ROS PCL driver (node + nodelet) for the Microsoft XBOX 360 Kinect sensor, publishing depth data as pcl::PointCloud.
+
+    * PCL example nodelet launch files for filtering, feature estimation, segmentation, etc...
+
+  </description>
+
+  <author>Radu Bogdan Rusu</author>
+  <license>BSD</license>
+  <url>http://ros.org/wiki/kinect_pcl</url>
+
+  <review status="experimental" notes="beta"/>
+
+  <depend package="pcl_ros" />
+  <depend package="kinect_camera" />
+
+  <export>
+    <cpp cflags="-I${prefix}/include" lflags="-Wl,-rpath,${prefix}/lib -L${prefix}/lib -lkinect_pcl" />
+    <nodelet plugin="${prefix}/kinect_pcl.xml" />
+  </export>
+
+  <platform os="ubuntu" version="10.04"/>
+  <platform os="ubuntu" version="10.10"/>
+</package>
