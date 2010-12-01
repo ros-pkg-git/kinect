@@ -45,13 +45,15 @@
 namespace kinect_camera 
 {
 
+const double KinectDriver::SHIFT_SCALE = 0.125;
+
 /** \brief Constructor */
 KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   : reconfigure_server_(param_nh),
     width_ (640), height_ (480),
     f_ctx_(NULL), f_dev_(NULL),
     started_(false),
-    depth_sent_ (false), rgb_sent_ (false), 
+    depth_sent_ (true), rgb_sent_ (true), 
     have_depth_matrix_(false),
     can_switch_stream_(false)
 {
@@ -124,11 +126,43 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   rgb_info_   = rgb_info_manager_->getCameraInfo ();
   depth_info_ = depth_info_manager_->getCameraInfo ();
   rgb_info_.header.frame_id = kinect_RGB_frame; 
-  depth_info_.header.frame_id = kinect_depth_frame; 
+  depth_info_.header.frame_id = kinect_depth_frame;
+  rgb_model_.fromCameraInfo(rgb_info_);
+  depth_model_.fromCameraInfo(depth_info_);
+
+  /// @todo Actually read all these parameters
+  shift_offset_ = 1090.845963;
+  baseline_ = 0.073012;
+
+  // Compute transform matrix from (u,v,d) of depth camera to (u,v) of RGB camera
+  Eigen::Matrix4d Q, S;
+  Eigen::Matrix<double, 3, 4> P;
+  // From (u,v,d,1) in depth image to (X,Y,Z,W) in depth camera frame
+  Q << 1, 0, 0, -depth_model_.cx(),
+       0, 1, 0, -depth_model_.cy(),
+       0, 0, 0,  depth_model_.fx(),
+       0, 0, 1.0 / baseline_, 0;
+
+  // From (X,Y,Z,W) in depth camera frame to RGB camera frame
+  S << 0.999968,  0.006511, -0.004615, -0.025201,
+      -0.006504,  0.999978,  0.001417,  0.000112,
+       0.004625, -0.001387,  0.999988,  0.001367,
+       0,         0,         0,         1;
+
+  // From (X,Y,Z,W) in RGB camera frame to (u,v,w) in RGB image
+  P << rgb_model_.fx(), 0,               rgb_model_.cx(), 0,
+       0,               rgb_model_.fy(), rgb_model_.cy(), 0,
+       0,               0,               1,               0;
+
+  // Putting it all together, from (u,v,d,1) in depth image to (u,v,w) in RGB image
+  depth_to_rgb_ = P*S*Q;
+
+  std::cout << "Transform matrix:" << std::endl << depth_to_rgb_ << std::endl << std::endl;
 
   // Publishers and subscribers
   image_transport::ImageTransport it(comm_nh);
   pub_rgb_     = it.advertiseCamera ("rgb/image_raw", 1);
+  pub_rgb_rect_ = it.advertise("rgb/image_rect_color", 1);
   pub_depth_   = it.advertiseCamera ("depth/image_raw", 1);
   pub_ir_      = it.advertiseCamera ("ir/image_raw", 1);
   pub_points_  = comm_nh.advertise<sensor_msgs::PointCloud>("points", 15);
@@ -257,73 +291,19 @@ void
   boost::mutex::scoped_lock lock (buffer_mutex_);
 
   // if first time in this function, build the depth projection matrix
+  /// @todo Don't need depth projection matrix anymore
   if(!have_depth_matrix_)
   {
     createDepthProjectionMatrix();
     have_depth_matrix_ = true;
   }
 
+  depth_buf_ = buf;
   depth_sent_ = false;
-
-  // Convert the data to ROS format
-  if (pub_points_.getNumSubscribers () > 0)
-  {
-    cloud_.points.resize (width_ * height_);
-    int nrp = 0;
-    // Assemble an ancient sensor_msgs/PointCloud message
-    for (int u = 0; u < width_; ++u) 
-    {
-      for (int v = 0; v < height_; ++v)
-      {
-        if (!getPoint3D (buf, u, v, cloud_.points[nrp].x, cloud_.points[nrp].y, cloud_.points[nrp].z))
-          continue;
-
-        nrp++;
-      }
-    }
-    // Resize to the correct number of points
-    cloud_.points.resize (nrp);
-  }
-  if (pub_points2_.getNumSubscribers () > 0)
-  {
-    float bad_point = std::numeric_limits<float>::quiet_NaN ();
-    // Assemble an awesome sensor_msgs/PointCloud2 message
-    for (int u = 0; u < width_; ++u) 
-    {
-      for (int v = 0; v < height_; ++v)
-      {
-        float *pstep = (float*)&cloud2_.data[(v * width_ + u) * cloud2_.point_step];
-        int d = 0;
-
-        float x, y, z;
-        if (getPoint3D (buf, u, v, x, y, z))
-        {
-          pstep[d++] = x;
-          pstep[d++] = y;
-          pstep[d++] = z;
-          // Fill in RGB
-          pstep[d++] = 0;
-        }
-        else
-        {
-          pstep[d++] = bad_point;
-          pstep[d++] = bad_point;
-          pstep[d++] = bad_point;
-          // Fill in RGB
-          pstep[d++] = 0;
-        }
-      }
-    }
-  }
-  if (pub_depth_.getNumSubscribers () > 0)
-  { 
-    // Fill in the depth image data
-    depthBufferTo8BitImage(buf);
-  }
 
   // Publish only if we have an rgb image too
   if (!rgb_sent_) 
-    publish ();
+    processRgbAndDepth ();
 }
 
 /** \brief RGB callback. Virtual.
@@ -336,21 +316,12 @@ void
 {
   boost::mutex::scoped_lock lock (buffer_mutex_);
 
+  rgb_buf_ = rgb;
   rgb_sent_ = false;
-
-  if (pub_rgb_.getNumSubscribers () > 0)
-  {
-    // Copy the image data
-    memcpy (&rgb_image_.data[0], &rgb[0], rgb_image_.data.size());
-
-    // Check the camera info
-    if (rgb_info_.height != (size_t)rgb_image_.height || rgb_info_.width != (size_t)rgb_image_.width)
-      ROS_DEBUG_THROTTLE (60, "[KinectDriver::rgbCb] Uncalibrated Camera");
-  }
 
   // Publish only if we have a depth image too
   if (!depth_sent_) {
-    publish ();
+    processRgbAndDepth ();
   }
 }
 
@@ -374,6 +345,96 @@ void
   if (!depth_sent_) {
     publish ();
   }
+}
+
+void KinectDriver::processRgbAndDepth()
+{
+  // Fill raw RGB image message
+  if (pub_rgb_.getNumSubscribers () > 0)
+  {
+    // Copy the image data
+    memcpy (&rgb_image_.data[0], &rgb_buf_[0], rgb_image_.data.size());
+
+    // Check the camera info
+    if (rgb_info_.height != (size_t)rgb_image_.height || rgb_info_.width != (size_t)rgb_image_.width)
+      ROS_DEBUG_THROTTLE (60, "[KinectDriver::rgbCb] Uncalibrated Camera");
+  }
+  cv::Mat rgb_raw(height_, width_, CV_8UC3, rgb_buf_);
+
+  // Convert the data to ROS format
+  /// @todo Make this use new projection stuff
+  if (pub_points_.getNumSubscribers () > 0)
+  {
+    cloud_.points.resize (width_ * height_);
+    int nrp = 0;
+    // Assemble an ancient sensor_msgs/PointCloud message
+    for (int u = 0; u < width_; ++u) 
+    {
+      for (int v = 0; v < height_; ++v)
+      {
+        if (!getPoint3D (depth_buf_, u, v, cloud_.points[nrp].x, cloud_.points[nrp].y, cloud_.points[nrp].z))
+          continue;
+
+        nrp++;
+      }
+    }
+    // Resize to the correct number of points
+    cloud_.points.resize (nrp);
+  }
+  
+  if (pub_points2_.getNumSubscribers () > 0)
+  {
+    cv::Mat rgb_rect;
+    rgb_model_.rectifyImage(rgb_raw, rgb_rect);
+    double fT = depth_model_.fx() * baseline_;
+    
+    float bad_point = std::numeric_limits<float>::quiet_NaN ();
+    // Assemble an awesome sensor_msgs/PointCloud2 message
+    int k = 0;
+    for (int v = 0; v < height_; ++v)
+    {
+      for (int u = 0; u < width_; ++u, ++k) 
+      {
+        float* pt_data = reinterpret_cast<float*>(&cloud2_.data[0] + k * cloud2_.point_step);
+        double d = SHIFT_SCALE * (shift_offset_ - depth_buf_[k]); // disparity
+        if (d <= 0.0) {
+          // not valid
+          pt_data[0] = bad_point;
+          pt_data[1] = bad_point;
+          pt_data[2] = bad_point;
+          // Fill in RGB
+          pt_data[3] = 0;
+          continue;
+        }
+
+        // Fill in XYZ
+        double Z = fT / d;
+        double X = ((u - depth_model_.cx()) / depth_model_.fx()) * Z;
+        double Y = ((v - depth_model_.cy()) / depth_model_.fy()) * Z;
+        pt_data[0] = X;
+        pt_data[1] = Y;
+        pt_data[2] = Z;
+
+        // Fill in RGB from corresponding pixel in rectified RGB image
+        Eigen::Vector4d uvd1;
+        uvd1 << u, v, d, 1;
+        Eigen::Vector3d uvw;
+        uvw = depth_to_rgb_ * uvd1;
+        int u_rgb = uvw[0]/uvw[2] + 0.5;
+        int v_rgb = uvw[1]/uvw[2] + 0.5;
+        cv::Vec3b rgb = rgb_rect.at<cv::Vec3b>(v_rgb, u_rgb);
+        int32_t rgb_packed = (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
+        memcpy(&pt_data[3], &rgb_packed, sizeof(int32_t));
+      }
+    }
+  }
+  if (pub_depth_.getNumSubscribers () > 0)
+  { 
+    // Fill in the depth image data
+    depthBufferTo8BitImage(depth_buf_);
+  }
+
+  publish();
 }
 
 void KinectDriver::formatSwitchCb(const ros::TimerEvent& e)
@@ -498,9 +559,6 @@ void KinectDriver::updateDeviceSettings()
 
 void KinectDriver::createDepthProjectionMatrix()
 {
-  image_geometry::PinholeCameraModel pcm;
-  pcm.fromCameraInfo(depth_info_manager_->getCameraInfo());
-
   depth_proj_matrix_ = new cv::Point3d[height_ * width_];
 
   for (int y=0; y<height_; ++y)
@@ -510,8 +568,8 @@ void KinectDriver::createDepthProjectionMatrix()
     cv::Point2d rectPoint;
     cv::Point3d rectRay;
 
-    pcm.rectifyPoint(rawPoint, rectPoint);
-    pcm.projectPixelTo3dRay(rectPoint, rectRay);
+    depth_model_.rectifyPoint(rawPoint, rectPoint);
+    depth_model_.projectPixelTo3dRay(rectPoint, rectRay);
 
     // the depth reading is proportional to the z value, not the distance
     // so we need to renormalize the vector to z = 1.0;

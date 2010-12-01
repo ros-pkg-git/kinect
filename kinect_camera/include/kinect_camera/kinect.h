@@ -61,6 +61,8 @@
 //@todo: warnings about deprecated header? 
 #include <image_geometry/pinhole_camera_model.h>
 
+#include <Eigen/Core>
+
 extern "C" 
 {
   #include "libfreenect.h"
@@ -123,6 +125,8 @@ namespace kinect_camera
         return (freenect_process_events (f_ctx_) >= 0);
       }
 
+      void processRgbAndDepth();
+
     protected:
       /** \brief Send the data over the network. */
       void publish ();
@@ -146,11 +150,13 @@ namespace kinect_camera
 
       /** \brief ROS publishers. */
       image_transport::CameraPublisher pub_rgb_, pub_depth_, pub_ir_;
+      image_transport::Publisher pub_rgb_rect_;
       ros::Publisher pub_points_, pub_points2_;
       ros::Publisher pub_imu_;
 
       /** \brief Camera info manager objects. */
       boost::shared_ptr<CameraInfoManager> rgb_info_manager_, depth_info_manager_;
+      image_geometry::PinholeCameraModel rgb_model_, depth_model_;
 
       /** \brief Dynamic reconfigure. */
       typedef kinect_camera::KinectConfig Config;
@@ -161,6 +167,10 @@ namespace kinect_camera
       /** \brief Camera parameters. */
       int width_;
       int height_;
+      double shift_offset_;
+      double baseline_; // between IR projector and depth camera
+      Eigen::Matrix<double, 3, 4> depth_to_rgb_;
+      static const double SHIFT_SCALE;
       
       /** \brief Freenect context structure. */
       freenect_context *f_ctx_;
@@ -184,7 +194,9 @@ namespace kinect_camera
       sensor_msgs::Imu imu_msg_;
 
       bool depth_sent_;
-      bool rgb_sent_; 
+      bool rgb_sent_;
+      freenect_depth *depth_buf_;
+      freenect_pixel *rgb_buf_;
 
       /** \brief Accelerometer data */
       double accel_x_, accel_y_, accel_z_;
@@ -199,6 +211,7 @@ namespace kinect_camera
       cv::Point3d * depth_proj_matrix_;
 
       /** \brief Timer for switching between IR and color streams in calibration mode */
+      /// @todo Maybe get rid of calibration mode and use separate data collection program
       ros::Timer format_switch_timer_;
       bool can_switch_stream_;
 
