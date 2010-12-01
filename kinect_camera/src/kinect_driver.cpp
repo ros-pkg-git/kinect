@@ -68,6 +68,7 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   cloud_.channels.resize (1);
   cloud_.channels[0].name = "rgb";
   cloud_.channels[0].values.resize (width_ * height_);
+  /// @todo "u" and "v" channels?
 
   cloud2_.height = height_;
   cloud2_.width = width_;
@@ -359,37 +360,61 @@ void KinectDriver::processRgbAndDepth()
     if (rgb_info_.height != (size_t)rgb_image_.height || rgb_info_.width != (size_t)rgb_image_.width)
       ROS_DEBUG_THROTTLE (60, "[KinectDriver::rgbCb] Uncalibrated Camera");
   }
+
+  // Rectify the RGB image if necessary
   cv::Mat rgb_raw(height_, width_, CV_8UC3, rgb_buf_);
+  cv::Mat rgb_rect;
+  if (pub_points_.getNumSubscribers () > 0 || pub_points2_.getNumSubscribers () > 0)
+    rgb_model_.rectifyImage(rgb_raw, rgb_rect);
+  double fT = depth_model_.fx() * baseline_;
 
   // Convert the data to ROS format
   /// @todo Make this use new projection stuff
   if (pub_points_.getNumSubscribers () > 0)
   {
-    cloud_.points.resize (width_ * height_);
-    int nrp = 0;
     // Assemble an ancient sensor_msgs/PointCloud message
-    for (int u = 0; u < width_; ++u) 
+    cloud_.points.resize (0); // sensor_msgs/PointCloud is sparse
+    cloud_.channels[0].values.resize(0);
+    int k = 0;
+    for (int v = 0; v < height_; ++v)
     {
-      for (int v = 0; v < height_; ++v)
+      for (int u = 0; u < width_; ++u, ++k) 
       {
-        if (!getPoint3D (depth_buf_, u, v, cloud_.points[nrp].x, cloud_.points[nrp].y, cloud_.points[nrp].z))
+        double d = SHIFT_SCALE * (shift_offset_ - depth_buf_[k]); // disparity
+        if (d <= 0.0)
           continue;
 
-        nrp++;
+        // Fill in XYZ
+        geometry_msgs::Point32 pt;
+        pt.z = fT / d;
+        pt.x = ((u - depth_model_.cx()) / depth_model_.fx()) * pt.z;
+        pt.y = ((v - depth_model_.cy()) / depth_model_.fy()) * pt.z;
+        cloud_.points.push_back(pt);
+
+        // Fill in RGB from corresponding pixel in rectified RGB image
+        Eigen::Vector4d uvd1;
+        uvd1 << u, v, d, 1;
+        Eigen::Vector3d uvw;
+        uvw = depth_to_rgb_ * uvd1;
+        int u_rgb = uvw[0]/uvw[2] + 0.5;
+        int v_rgb = uvw[1]/uvw[2] + 0.5;
+        
+        int32_t rgb_packed = 0;
+        if (u_rgb >= 0 && u_rgb < width_ && v_rgb >= 0 && v_rgb < height_) {
+          cv::Vec3b rgb = rgb_rect.at<cv::Vec3b>(v_rgb, u_rgb);
+          rgb_packed = (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
+        }
+        cloud_.channels[0].values.push_back(*(float*)(&rgb_packed));
       }
     }
     // Resize to the correct number of points
-    cloud_.points.resize (nrp);
+    //cloud_.points.resize (nrp);
   }
   
   if (pub_points2_.getNumSubscribers () > 0)
   {
-    cv::Mat rgb_rect;
-    rgb_model_.rectifyImage(rgb_raw, rgb_rect);
-    double fT = depth_model_.fx() * baseline_;
-    
-    float bad_point = std::numeric_limits<float>::quiet_NaN ();
     // Assemble an awesome sensor_msgs/PointCloud2 message
+    float bad_point = std::numeric_limits<float>::quiet_NaN ();
     int k = 0;
     for (int v = 0; v < height_; ++v)
     {
@@ -415,15 +440,20 @@ void KinectDriver::processRgbAndDepth()
         pt_data[1] = Y;
         pt_data[2] = Z;
 
-        // Fill in RGB from corresponding pixel in rectified RGB image
+        // Calculate corresponding pixel in rectified RGB image
         Eigen::Vector4d uvd1;
         uvd1 << u, v, d, 1;
         Eigen::Vector3d uvw;
         uvw = depth_to_rgb_ * uvd1;
         int u_rgb = uvw[0]/uvw[2] + 0.5;
         int v_rgb = uvw[1]/uvw[2] + 0.5;
-        cv::Vec3b rgb = rgb_rect.at<cv::Vec3b>(v_rgb, u_rgb);
-        int32_t rgb_packed = (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
+
+        // Fill in RGB
+        int32_t rgb_packed = 0;
+        if (u_rgb >= 0 && u_rgb < width_ && v_rgb >= 0 && v_rgb < height_) {
+          cv::Vec3b rgb = rgb_rect.at<cv::Vec3b>(v_rgb, u_rgb);
+          rgb_packed = (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
+        }
         memcpy(&pt_data[3], &rgb_packed, sizeof(int32_t));
       }
     }
