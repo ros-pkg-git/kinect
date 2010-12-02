@@ -27,6 +27,8 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h> // getopt
+#include <cstdlib>
 #include "libfreenect.h"
 
 #include <pthread.h>
@@ -55,8 +57,7 @@ using namespace std;
 #define COLS 640
 
 // checkerboard pattern
-int ccols = 7;
-int crows = 6;
+cv::Size pattern_size;
 
 // saving images
 int ir_num = 0;                 // individual frames
@@ -69,9 +70,6 @@ bool saveDepth = false;
 
 pthread_t freenect_thread;
 volatile int die = 0;
-
-int g_argc;
-char **g_argv;
 
 int window;
 int ir_mode = 0;
@@ -284,15 +282,11 @@ InitGL (int Width, int Height)
 void *
 gl_threadfunc (void *arg)
 {
-  printf ("GL thread\n");
-
-  glutInit (&g_argc, g_argv);
-
   glutInitDisplayMode (GLUT_RGBA | GLUT_DOUBLE | GLUT_ALPHA | GLUT_DEPTH);
   glutInitWindowSize (1280, 480);
   glutInitWindowPosition (0, 0);
 
-  window = glutCreateWindow ("Kinect Viewer Demo");
+  window = glutCreateWindow ("Calibration Data Acquisition");
 
   glutDisplayFunc (&DrawGLScene);
   glutIdleFunc (&DrawGLScene);
@@ -400,13 +394,13 @@ rgb_cb (freenect_device * dev, freenect_pixel * rgb, uint32_t timestamp)
     }
 
   vector<cv::Point2f> corners;
-  bool ret = cv::findChessboardCorners(img,cvSize(crows,ccols),corners);
+  bool ret = cv::findChessboardCorners(img, pattern_size, corners);
 
   // convert to color image and display
   cv::Mat imgc;
   imgc = img.clone();
   if (corners.size() > 0)
-    drawChessboardCorners(imgc,cvSize(crows,ccols),cv::Mat(corners),ret);
+    drawChessboardCorners(imgc, pattern_size, cv::Mat(corners), ret);
 
   // redraw
   imgi = imgc.ptr<uint8_t>(0);
@@ -457,13 +451,13 @@ ir_cb (freenect_device * dev, freenect_pixel_ir * rgb, uint32_t timestamp)
     imgi[i] = (uint8_t)ir_gamma[rgb[i]]; // use gamma-corrected for low light
 
   vector<cv::Point2f> corners;
-  bool ret = cv::findChessboardCorners(img,cvSize(crows,ccols),corners);
+  bool ret = cv::findChessboardCorners(img, pattern_size, corners);
 
   // convert to color image and display
   cv::Mat imgc(ROWS,COLS,CV_8UC3);
   cv::cvtColor(img,imgc,CV_GRAY2RGB,3);
   if (corners.size() > 0)
-    drawChessboardCorners(imgc,cvSize(crows,ccols),cv::Mat(corners),ret);
+    drawChessboardCorners(imgc, pattern_size, cv::Mat(corners), ret);
 
   // redraw
   imgi = imgc.ptr<uint8_t>(0);
@@ -520,9 +514,31 @@ freenect_threadfunc (void *arg)
 int
 main(int argc, char **argv)
 {
-  int res;
+  // Parse GLUT-specific options
+  glutInit (&argc, argv);
 
-  printf ("Kinect camera test\n");
+  pattern_size = cv::Size(0,0);
+  opterr = 0;
+  int c;
+  while ((c = getopt(argc, argv, "r:c:")) != -1)
+  {
+    switch (c)
+    {
+      case 'r':
+        pattern_size.height = atoi(optarg);
+        break;
+      case 'c':
+        pattern_size.width = atoi(optarg);
+        break;
+    }
+  }
+
+  if (pattern_size.width == 0 || pattern_size.height == 0)
+  {
+    printf("Must set the checkerboard width and height. Usage:\n"
+           "%s -r ROWS -c COLS\n", argv[0]);
+    return 1;
+  }
 
   int i;
   for (i = 0; i < 2048; i++)
@@ -545,9 +561,6 @@ main(int argc, char **argv)
     v = powf (v, 0.45);
     g_gamma[i] = v * 256;
   }
-
-  g_argc = argc;
-  g_argv = argv;
 
   if (freenect_init (&f_ctx, NULL) < 0)
   {
@@ -573,8 +586,7 @@ main(int argc, char **argv)
     return 1;
   }
 
-  res = pthread_create (&freenect_thread, NULL, freenect_threadfunc, NULL);
-  if (res)
+  if (pthread_create (&freenect_thread, NULL, freenect_threadfunc, NULL))
   {
     printf ("pthread_create failed\n");
     return 1;
