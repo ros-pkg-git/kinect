@@ -16,7 +16,7 @@
   <depend stack="driver_common" /> <!-- dynamic_reconfigure -->
   <depend stack="geometry" /> <!-- eigen -->
   <depend stack="image_common" /> <!-- image_transport -->
-  <depend stack="perception_pcl" /> <!-- pcl_ros -->
+  <depend stack="point_cloud_perception" /> <!-- pcl_ros -->
   <depend stack="ros" /> <!-- roscpp -->
   <depend stack="vision_opencv" /> <!-- opencv2, image_geometry -->
 
