@@ -129,26 +129,43 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   rgb_model_.fromCameraInfo(rgb_info_);
   depth_model_.fromCameraInfo(depth_info_);
 
-  /// @todo Actually read all these parameters
-  shift_offset_ = 1090.845963;
-  baseline_ = 0.073012;
+  /// @todo Distinguish calibrated/uncalibrated Kinects
+  // Read additional calibration parameters
+  param_nh.param ("shift_offset", shift_offset_, 1084.0);
+  param_nh.param ("projector_depth_baseline", baseline_, 0.075); // 7.5cm
+  ROS_INFO("Shift offset: %f, baseline: %f", shift_offset_, baseline_);
 
   // Compute transform matrix from (u,v,d) of depth camera to (u,v) of RGB camera
-  Eigen::Matrix4d Q, S;
-  Eigen::Matrix<double, 3, 4> P;
   // From (u,v,d,1) in depth image to (X,Y,Z,W) in depth camera frame
+  Eigen::Matrix4d Q;
   Q << 1, 0, 0, -depth_model_.cx(),
        0, 1, 0, -depth_model_.cy(),
        0, 0, 0,  depth_model_.fx(),
        0, 0, 1.0 / baseline_, 0;
 
   // From (X,Y,Z,W) in depth camera frame to RGB camera frame
-  S << 0.999968,  0.006511, -0.004615, -0.025201,
-      -0.006504,  0.999978,  0.001417,  0.000112,
-       0.004625, -0.001387,  0.999988,  0.001367,
-       0,         0,         0,         1;
+  Eigen::Matrix4d S;
+  XmlRpc::XmlRpcValue rot, trans;
+  if (param_nh.getParam("depth_rgb_rotation", rot) &&
+      param_nh.getParam("depth_rgb_translation", trans) &&
+      rot.size() == 9 && trans.size() == 3)
+  {
+    S << rot[0], rot[1], rot[2], trans[0],
+         rot[3], rot[4], rot[5], trans[1],
+         rot[6], rot[7], rot[8], trans[2],
+         0,      0,      0,      1;
+  }
+  else
+  {
+    ROS_WARN("Transform between depth and RGB cameras is not calibrated");
+    S << 1, 0, 0, -0.025, // 2.5cm
+         0, 1, 0, 0,
+         0, 0, 1, 0,
+         0, 0, 0, 1;
+  }
 
   // From (X,Y,Z,W) in RGB camera frame to (u,v,w) in RGB image
+  Eigen::Matrix<double, 3, 4> P;
   P << rgb_model_.fx(), 0,               rgb_model_.cx(), 0,
        0,               rgb_model_.fy(), rgb_model_.cy(), 0,
        0,               0,               1,               0;
