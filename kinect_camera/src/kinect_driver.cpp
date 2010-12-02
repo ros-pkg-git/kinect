@@ -53,8 +53,7 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
     width_ (640), height_ (480),
     f_ctx_(NULL), f_dev_(NULL),
     started_(false),
-    depth_sent_ (true), rgb_sent_ (true), 
-    can_switch_stream_(false)
+    depth_sent_ (true), rgb_sent_ (true)
 {
   // Set up reconfigure server
   ReconfigureServer::CallbackType f = boost::bind(&KinectDriver::configCb, this, _1, _2);
@@ -168,12 +167,6 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   pub_points_  = comm_nh.advertise<sensor_msgs::PointCloud>("points", 15);
   pub_points2_ = comm_nh.advertise<sensor_msgs::PointCloud2>("points2", 15);
   pub_imu_ = comm_nh.advertise<sensor_msgs::Imu>("imu", 15);
-
-  // Timer for switching between IR and color image streams when in calibration mode.
-  // libfreenect freezes if we try to do this in the image callbacks.
-  // Too short a period and the switching doesn't work (why?), 0.3s seems to be OK.
-  format_switch_timer_ = comm_nh.createTimer(ros::Duration(0.3), &KinectDriver::formatSwitchCb, this);
-  format_switch_timer_.stop();
 }
 
 /** \brief Initialize a Kinect device, given an index.
@@ -257,9 +250,6 @@ void
   else
     freenect_start_rgb (f_dev_);
   
-  if (config_.calibration_mode)
-    format_switch_timer_.start();
-  
   started_ = true;
 }
 
@@ -272,8 +262,6 @@ void
     freenect_stop_ir (f_dev_);
   else
     freenect_stop_rgb (f_dev_);
-
-  format_switch_timer_.stop();
   
   started_ = false;
 }
@@ -457,22 +445,6 @@ void KinectDriver::processRgbAndDepth()
   publish();
 }
 
-void KinectDriver::formatSwitchCb(const ros::TimerEvent& e)
-{
-  if (!can_switch_stream_)
-    return;
-  
-  if (config_.color_format == FREENECT_FORMAT_IR) {
-    config_.color_format = FREENECT_FORMAT_RGB;
-    configCb(config_, 0);
-  }
-  else {
-    config_.color_format = FREENECT_FORMAT_IR;
-    configCb(config_, 0);
-  }
-  can_switch_stream_ = false;
-}
-
 void 
   KinectDriver::publish ()
 {
@@ -506,7 +478,6 @@ void
 
   rgb_sent_   = true;
   depth_sent_ = true;
-  can_switch_stream_ = true;
 }
 
 void KinectDriver::publishImu()
@@ -548,11 +519,6 @@ void KinectDriver::configCb (Config &config, uint32_t level)
     ROS_ERROR("Unknown color format code %d", config.color_format);
   }
 
-  if (config.calibration_mode && started_)
-    format_switch_timer_.start();
-  else
-    format_switch_timer_.stop();
-  
   config_ = config;
   updateDeviceSettings();
 }

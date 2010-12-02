@@ -193,11 +193,6 @@ namespace kinect_camera
       /** \brief Tilt sensor */
       double tilt_angle_; // [deg]
 
-      /** \brief Timer for switching between IR and color streams in calibration mode */
-      /// @todo Maybe get rid of calibration mode and use separate data collection program
-      ros::Timer format_switch_timer_;
-      bool can_switch_stream_;
-
       /** \brief Callback for dynamic_reconfigure */
       void configCb (Config &config, uint32_t level);
 
@@ -214,8 +209,6 @@ namespace kinect_camera
         * \param buf the depth buffer
         */
       void depthBufferTo8BitImage(const freenect_depth * buf);
-
-      void formatSwitchCb(const ros::TimerEvent& e);
   };
 
 } // namespace kinect_camera
