@@ -10,12 +10,14 @@
   <license>BSD,Apache 2.0</license>  
   <review status="unreviewed" notes=""/>
   <url>http://ros.org/wiki/kinect</url>
+  <depend stack="camera_drivers" /> <!-- camera_info_manager -->
   <depend stack="common" /> <!-- nodelet -->
   <depend stack="common_msgs" /> <!-- sensor_msgs -->
   <depend stack="driver_common" /> <!-- dynamic_reconfigure -->
-  <depend stack="image_common" /> <!-- camera_info_manager, image_transport -->
-  <depend stack="point_cloud_perception" /> <!-- pcl_ros -->
+  <depend stack="geometry" /> <!-- eigen -->
+  <depend stack="image_common" /> <!-- image_transport -->
+  <depend stack="perception_pcl" /> <!-- pcl_ros -->
   <depend stack="ros" /> <!-- roscpp -->
-  <depend stack="vision_opencv" /> <!-- image_geometry -->
+  <depend stack="vision_opencv" /> <!-- opencv2, image_geometry -->
 
 </stack>
