@@ -41,6 +41,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <iostream>
+#include <unistd.h> // getopt
+#include <cstdlib>
 
 #include <math.h>
 #include <opencv2/core/core.hpp>
@@ -59,26 +61,12 @@ using namespace std;
 #define ROWS 480
 #define COLS 640
 
-// checkerboard pattern
-int ccols = 7;
-int crows = 6;
-
-// cell size
-double csize = .108;
-
 // Pixel offset from IR image to depth image
-//cv::Point2f ir_depth_offset = cv::Point2f(-4.835, -3.888);
-//cv::Point2f ir_depth_offset = cv::Point2f(-4.5, -3.5);
 cv::Point2f ir_depth_offset = cv::Point2f(-4, -3);
-//cv::Point2f ir_depth_offset = cv::Point2f(0, 0);
-
-// changes shifts to disparities
-// 1084 is shift offset (from CCNY data); assume 1/8 pixel
-//#define SHIFT_OFFSET 1084
 
 #define SHIFT_SCALE 0.125
-//#define SHIFT_SCALE 0.125
 
+// change shift to disparity
 double shift2disp(int shift, double shift_offset)
 {
   return SHIFT_SCALE*(double)(shift_offset - shift);
@@ -131,6 +119,37 @@ void setDepthColor(uint8_t *cptr, int d)
     }
 }
 
+void writeCalibration(FILE *f, const cv::Mat& cameraMatrix, const cv::Mat& distCoeffs)
+{
+  const double *K = cameraMatrix.ptr<double>();
+  const double *D = distCoeffs.ptr<double>();
+  fprintf(f, "image_width: 640\n");
+  fprintf(f, "image_height: 480\n");
+  fprintf(f, "camera_name: kinect\n");
+  fprintf(f,
+          "camera_matrix:\n"
+          "   rows: 3\n"
+          "   cols: 3\n"
+          "   data: [ %.8f, %.8f, %.8f, %.8f, %.8f, %.8f, %.8f, %.8f, %.8f ]\n",
+          K[0], K[1], K[2], K[3], K[4], K[5], K[6], K[7], K[8]);
+  fprintf(f,
+          "distortion_coefficients:\n"
+          "   rows: 1\n"
+          "   cols: 5\n"
+          "   data: [ %.8f, %.8f, %.8f, %.8f, %.8f ]\n",
+          D[0], D[1], D[2], D[3], D[4]);
+  fprintf(f,
+          "rectification_matrix:\n"
+          "   rows: 3\n"
+          "   cols: 3\n"
+          "   data: [ 1., 0., 0., 0., 1., 0., 0., 0., 1. ]\n");
+  fprintf(f,
+          "projection_matrix:\n"
+          "   rows: 3\n"
+          "   cols: 4\n"
+          "   data: [ %.8f, %.8f, %.8f, 0., %.8f, %.8f, %.8f, 0., %.8f, %.8f, %.8f, 0. ]\n",
+          K[0], K[1], K[2], K[3], K[4], K[5], K[6], K[7], K[8]);
+}
 
 // 
 // read in IR images, perform monocular calibration, check distortion
@@ -145,24 +164,45 @@ int
 main(int argc, char **argv)
 {
   printf("Optional arguments: [data dir] [#rows #cols]\n");
-  
-  char fdir[1024];
-  sprintf(fdir, ".");
-  if (argc > 1)
+
+  // checkerboard pattern
+  int ccols = 0;
+  int crows = 0;
+
+  // cell size
+  double csize = 0.0;
+
+  char *fdir = NULL;
+
+  opterr = 0;
+  int c;
+  while ((c = getopt(argc, argv, "r:c:s:")) != -1)
+  {
+    switch (c)
     {
-      sprintf(fdir,"%s",argv[1]);
+      case 'r':
+        crows = atoi(optarg);
+        break;
+      case 'c':
+        ccols = atoi(optarg);
+        break;
+      case 's':
+        csize = atof(optarg);
+        break;
     }
+  }
 
-  if (argc > 2)
-    csize = atof(argv[2]);
+  if (optind < argc)
+    fdir = argv[optind];
 
-  if (argc > 4)
-    {
-      crows = atoi(argv[3]);
-      ccols = atoi(argv[4]);
-    }
-
-  
+  if (crows == 0 || ccols == 0 || csize == 0.0 || fdir == NULL)
+  {
+    printf("Must give the checkerboard dimensions and data directory.\n"
+           "Usage:\n"
+           "%s -r ROWS -c COLS -s SQUARE_SIZE\n", argv[0]);
+    return 1;
+  }
+    
   // construct the planar pattern
   vector<Point3f> pat;
   for (int i=0; i<ccols; i++)
@@ -187,14 +227,15 @@ main(int argc, char **argv)
 
       if (ret)
         printf("Found corners in image %s\n",fname);
-      else
+      else {
         printf("*** Didn't find corners in image %s\n",fname);
+        return 1;
+      }
 
       cv::cornerSubPix(img, corners, Size(5,5), Size(-1,-1),
                        TermCriteria(TermCriteria::MAX_ITER+TermCriteria::EPS, 30, 0.1));
 
       // Adjust corners detected in IR image to where they would appear in the depth image
-      /// @todo Currently assuming a constant offset for all depths
       for (int i = 0; i < corners.size(); ++i)
         corners[i] += ir_depth_offset;
 
@@ -203,12 +244,13 @@ main(int argc, char **argv)
     }
 
 
-  // calibrate monocular camera
+  // Monocular calibration of depth camera
   Mat camMatrix;
   Mat distCoeffs;
   vector<Mat> rvecs;
   vector<Mat> tvecs;
   double rp_err;
+  // Currently assuming zero distortion
   rp_err = calibrateCamera(pats, points, Size(COLS,ROWS), camMatrix, distCoeffs,
                            rvecs, tvecs,
                            CV_CALIB_FIX_K3 | 
@@ -221,29 +263,29 @@ main(int argc, char **argv)
 
   printf("\nCalibration results:\n");
 
-  double *dptr = distCoeffs.ptr<double>(0);
-  printf("\nDistortion coefficients \nFirst two (k1, k2) should be close to zero\n");
-  printf("k1: %f \nk2: %f\n", dptr[0], dptr[1]);
-  printf("\nLast three (t1,t2,k3) are zero by specification\n");
-  printf("t1: %f \nt2: %f \nk3: %f\n", dptr[2], dptr[3], dptr[4]);
-
-  std::cout << distCoeffs.rows << " " << distCoeffs.cols << std::endl;
-
   // print camera matrix
   printf("\nCamera matrix\n");
-  dptr = camMatrix.ptr<double>(0);
-  double f = *dptr;             // focal length
+  double *dptr = camMatrix.ptr<double>(0);
   for (int i=0; i<3; i++)
     {
       for (int j=0; j<3; j++)
         printf("%f ",*dptr++);
       printf("\n");
     }
+  printf("\nAssuming zero distortion\n");
+  
   printf("\nReprojection error = %f\n\n", rp_err);
 
+  char depth_fname[1024];
+  sprintf(depth_fname, "%s/calibration_depth.yaml", fdir);
+  FILE *depth_file = fopen(depth_fname, "w");
+  if (depth_file) {
+    writeCalibration(depth_file, camMatrix, distCoeffs);
+    printf("Wrote depth camera calibration to %s\n\n", depth_fname);
+  }
   
   // Read in depth images, fit readings to computed depths
-
+  /// @todo Not checking that we actually got depth readings!
   fnum = 0;
   std::vector<cv::Vec2d> ls_src1;
   std::vector<double> ls_src2;
@@ -293,10 +335,15 @@ main(int argc, char **argv)
     B = depth_params.at<double>(1);
     double f = camMatrix.ptr<double>()[0];
     b = SHIFT_SCALE * A / f;
-    printf("A = %f\nB = %f\nBaseline between projector and depth camera = %f\n", A, B, b);
+    printf("Reading to depth fitting parameters:\n"
+           "A = %f\n"
+           "B = %f\n"
+           "Baseline between projector and depth camera = %f\n",
+           A, B, b);
   }
   else {
     printf("**** Failed to solve least-squared problem ****\n");
+    return 1;
   }
 
   // 
@@ -319,8 +366,10 @@ main(int argc, char **argv)
 
       if (ret)
         printf("Found corners in image %s\n",fname);
-      else
+      else {
         printf("*** Didn't find corners in image %s\n",fname);
+        return 1;
+      }
 
       Mat gray;
       cv::cvtColor(img, gray, CV_RGB2GRAY);
@@ -334,7 +383,7 @@ main(int argc, char **argv)
 
   // calibrate monocular camera
   Mat camMatrixRGB;
-  Mat distCoeffsRGB = Mat::zeros(4,1,CV_64F);
+  Mat distCoeffsRGB = Mat::zeros(5,1,CV_64F);
   // initialize camera matrix
   camMatrixRGB = (Mat_<double>(3,3) << 1, 0, 320, 0, 1, 240, 0, 0, 1);
 
@@ -351,12 +400,6 @@ main(int argc, char **argv)
   // distortion results
   printf("\nCalibration results:\n");
 
-  dptr = distCoeffsRGB.ptr<double>(0);
-  printf("\nDistortion coefficients \nFirst two (k1, k2) should be close to zero\n");
-  printf("k1: %f \nk2: %f\n", dptr[0], dptr[1]);
-  printf("\nLast three (t1,t2,k3) are zero by specification\n");
-  printf("t1: %f \nt2: %f \nk3: %f\n", dptr[2], dptr[3], dptr[4]);
-
   // print camera matrix
   printf("\nCamera matrix\n");
   dptr = camMatrixRGB.ptr<double>(0);
@@ -366,7 +409,24 @@ main(int argc, char **argv)
         printf("%f ",*dptr++);
       printf("\n");
     }
+
+  dptr = distCoeffsRGB.ptr<double>(0);
+  printf("\nDistortion coefficients:\n"
+         "k1: %f\n"
+         "k2: %f\n"
+         "t1: %f\n"
+         "t2: %f\n"
+         "k3: %f\n", dptr[0], dptr[1], dptr[2], dptr[3], dptr[4]);
+  
   printf("\nReprojection error = %f\n\n", rp_err);
+
+  char rgb_fname[1024];
+  sprintf(rgb_fname, "%s/calibration_rgb.yaml", fdir);
+  FILE *rgb_file = fopen(rgb_fname, "w");
+  if (rgb_file) {
+    writeCalibration(rgb_file, camMatrixRGB, distCoeffsRGB);
+    printf("Wrote RGB camera calibration to %s\n\n", rgb_fname);
+  }
 
   // stereo calibration between IR and RGB
   Mat R,T,E,F;
@@ -418,18 +478,22 @@ main(int argc, char **argv)
   Matrix<double,3,4> D = P*S*Q;
   std::cout << "Transform matrix:" << std::endl << D << std::endl << std::endl;
 
-#if 0
-  // a little test, should give a result that are close
-  Vector4d p;
-  Vector3d q;
-  p << uu, vv, disp, 1;
-  q = D*p;
+  char params_fname[1024];
+  sprintf(params_fname, "%s/kinect_params.yaml", fdir);
+  FILE *params_file = fopen(params_fname, "w");
+  if (params_file) {
+    fprintf(params_file, "shift_offset: %.4f\n", B);
+    fprintf(params_file, "projector_depth_baseline: %.5f\n", b);
+    dptr = R.ptr<double>(0);
+    fprintf(params_file,
+            "depth_rgb_rotation: [ %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f ]\n",
+            dptr[0], dptr[1], dptr[2], dptr[3], dptr[4], dptr[5], dptr[6], dptr[7], dptr[8]);
+    dptr = T.ptr<double>(0);
+    fprintf(params_file,
+            "depth_rgb_translation: [ %.6f, %.6f, %.6f ]\n", dptr[0], dptr[1], dptr[2]);
+    printf("Wrote additional calibration parameters to %s\n", params_fname);
+  }
   
-  cout << "Test the transform, input:" << endl;
-  cout << p.transpose() << endl << "Output (should be ~455,380):" << endl;
-  cout << q.transpose()/q[2] << endl << endl;
-#endif
-
   //
   // create rectified disparity images and save
   //
@@ -444,7 +508,7 @@ main(int argc, char **argv)
 
 
   fnum = 0;
-  cout << "Rectifying disparity images" << endl;
+  printf("Creating output images\n");
   while (1)
     {
       char fname[1024];
@@ -471,7 +535,6 @@ main(int argc, char **argv)
       uint8_t *rcptr = imgrc.ptr<uint8_t>(0);
       uint8_t *cptr  = imgc.ptr<uint8_t>(0);
       uint8_t *dcptr = imgdc.ptr<uint8_t>(0);
-      //uint8_t *rgbptr = imgRGB.ptr<uint8_t>(0);
       uint8_t *rgbptr = imgRgbRect.ptr<uint8_t>(0);
 
       int k=0;
@@ -519,7 +582,6 @@ main(int argc, char **argv)
 
       fnum++;
     }
-  
 
   return 0;
 }
