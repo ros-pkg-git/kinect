@@ -1,0 +1,15 @@
+<package>
+  <description brief="kinect_calibration">
+
+     kinect_calibration
+
+  </description>
+  <author>Kurt Konolige, Patrick Mihelich</author>
+  <license>BSD</license>
+  <review status="unreviewed" notes=""/>
+  <url>http://ros.org/wiki/kinect_calibration</url>
+  <depend package="freenect"/>
+  <depend package="opencv2"/>
+  <depend package="eigen"/>
+
+</package>
