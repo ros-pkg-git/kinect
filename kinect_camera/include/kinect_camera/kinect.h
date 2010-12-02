@@ -133,17 +133,6 @@ namespace kinect_camera
 
       void publishImu();
 
-      /** \brief Convert an index from the depth image to a 3D point and return
-        * its XYZ coordinates.
-        * \param buf the depth image
-        * \param u index in the depth image
-        * \param v index in the depth image
-        * \param x the resultant x coordinate of the point
-        * \param y the resultant y coordinate of the point
-        * \param z the resultant z coordinate of the point
-        */
-      inline bool getPoint3D (freenect_depth *buf, int u, int v, float &x, float &y, float &z) const;
-
     private:
       /** \brief Internal mutex. */
       boost::mutex buffer_mutex_;
@@ -204,12 +193,6 @@ namespace kinect_camera
       /** \brief Tilt sensor */
       double tilt_angle_; // [deg]
 
-      /** \brief Flag whether the rectification matrix has been created */
-      bool have_depth_matrix_;
-
-      /** \brief Matrix of rectified projection vectors for depth camera */
-      cv::Point3d * depth_proj_matrix_;
-
       /** \brief Timer for switching between IR and color streams in calibration mode */
       /// @todo Maybe get rid of calibration mode and use separate data collection program
       ros::Timer format_switch_timer_;
@@ -225,14 +208,6 @@ namespace kinect_camera
       static void rgbCbInternal (freenect_device *dev, freenect_pixel *buf, uint32_t timestamp);
 
       static void irCbInternal (freenect_device *dev, freenect_pixel_ir *buf, uint32_t timestamp);
-
-      /** \brief Builds the depth rectification matrix from the camera info topic */
-      void createDepthProjectionMatrix();
-
-      /** \brief Convert the raw depth reading to meters
-        * \param reading the raw reading in the depth buffer
-        */
-      inline double getDistanceFromReading(freenect_depth reading) const;
 
       /** \brief Fills in the depth_image_ data with color from the depth buffer.
         * The color is linear with the z-depth of the pixel, scaling up to max_range_

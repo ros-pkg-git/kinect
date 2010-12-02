@@ -54,7 +54,6 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
     f_ctx_(NULL), f_dev_(NULL),
     started_(false),
     depth_sent_ (true), rgb_sent_ (true), 
-    have_depth_matrix_(false),
     can_switch_stream_(false)
 {
   // Set up reconfigure server
@@ -246,8 +245,6 @@ KinectDriver::~KinectDriver ()
 {
   freenect_close_device (f_dev_);
   freenect_shutdown (f_ctx_);
-  
-  delete [] depth_proj_matrix_;
 }
 
 /** \brief Start (resume) the data acquisition process. */
@@ -290,14 +287,6 @@ void
   KinectDriver::depthCb (freenect_device *dev, freenect_depth *buf, uint32_t timestamp)
 {
   boost::mutex::scoped_lock lock (buffer_mutex_);
-
-  // if first time in this function, build the depth projection matrix
-  /// @todo Don't need depth projection matrix anymore
-  if(!have_depth_matrix_)
-  {
-    createDepthProjectionMatrix();
-    have_depth_matrix_ = true;
-  }
 
   depth_buf_ = buf;
   depth_sent_ = false;
@@ -458,6 +447,7 @@ void KinectDriver::processRgbAndDepth()
       }
     }
   }
+  
   if (pub_depth_.getNumSubscribers () > 0)
   { 
     // Fill in the depth image data
@@ -587,73 +577,25 @@ void KinectDriver::updateDeviceSettings()
   }
 }
 
-void KinectDriver::createDepthProjectionMatrix()
-{
-  depth_proj_matrix_ = new cv::Point3d[height_ * width_];
-
-  for (int y=0; y<height_; ++y)
-	for (int x=0; x<width_ ; ++x) 
-  {
-    cv::Point2d rawPoint(x, y);
-    cv::Point2d rectPoint;
-    cv::Point3d rectRay;
-
-    depth_model_.rectifyPoint(rawPoint, rectPoint);
-    depth_model_.projectPixelTo3dRay(rectPoint, rectRay);
-
-    // the depth reading is proportional to the z value, not the distance
-    // so we need to renormalize the vector to z = 1.0;
-    rectRay *= 1.0/rectRay.z;
-
-    depth_proj_matrix_[y*width_ + x] = rectRay;
-  }
-}
-
-inline double KinectDriver::getDistanceFromReading(freenect_depth reading) const
-{
-  // The formula is Z = T*R/(T - dX), where:
-  //   - Z is the distance from the camera
-  //   - T is the baseline between the depth camera and IR projector
-  //   - R is the distance to the plane of the reference image captured during factory calibration
-  //   - dX is the calculated pattern shift in the reference plane
-  // If we assume the reading r is linearly related to dX (e.g. is the disparity) by some scaling
-  // and offset, we need to fit parameters A and B such that Z = A / (B - r).
-  // See data points at: http://www.ros.org/wiki/kinect_node
-  /// @todo Make A and B calibration parameters of some sort.
-  static const double A = 325.616;
-  static const double B = 1084.61;
-  return A / (B - reading);
-}
-
-inline bool KinectDriver::getPoint3D (freenect_depth *buf, int u, int v, float &x, float &y, float &z) const
-{
-  int reading = buf[v * width_ + u];
-
-  if (reading  >= 2048 || reading <= 0) 
-    return (false);
-
-  double range = getDistanceFromReading(reading);
-
-  if (range > config_.max_range || range <= 0)
-    return (false);  
-
-  cv::Point3d rectRay = depth_proj_matrix_[v*width_ + u];
-  rectRay *= range;
-  x = rectRay.x;
-  y = rectRay.y;
-  z = rectRay.z;
-
-  return (true);
-}
+// The formula is Z = T*R/(T - dX), where:
+//   - Z is the distance from the camera
+//   - T is the baseline between the depth camera and IR projector
+//   - R is the distance to the plane of the reference image captured during factory calibration
+//   - dX is the calculated pattern shift in the reference plane
+// If we assume the reading r is linearly related to dX (e.g. is the disparity) by some scaling
+// and offset, we need to fit parameters A and B such that Z = A / (B - r).
+// See data points at: http://www.ros.org/wiki/kinect_node
 
 void KinectDriver::depthBufferTo8BitImage(const freenect_depth * buf)
 {
+  double fT = depth_model_.fx() * baseline_;
+  
   for (int y=0; y<height_; ++y)
   for (int x=0; x<width_;  ++x) 
   {
     int index(y*width_ + x);
     int reading = buf[index];
-    double range = getDistanceFromReading(reading);
+    double range = fT / (shift_offset_ - reading);
 
     uint8_t color;
 
