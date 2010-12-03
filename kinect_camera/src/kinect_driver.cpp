@@ -62,11 +62,15 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   // Assemble the point cloud data
   std::string kinect_depth_frame;
   param_nh.param ("kinect_depth_frame", kinect_depth_frame, std::string ("/kinect_depth"));
-  cloud_.header.frame_id = cloud2_.header.frame_id = kinect_depth_frame;
+  /// @todo cloud2_rgb_ should be in RGB frame
+  cloud_.header.frame_id = cloud2_.header.frame_id = cloud_rgb_.header.frame_id = cloud2_rgb_.header.frame_id = kinect_depth_frame;
   cloud_.channels.resize (1);
   cloud_.channels[0].name = "rgb";
   cloud_.channels[0].values.resize (width_ * height_);
   /// @todo "u" and "v" channels?
+  cloud_rgb_.channels.resize (1);
+  cloud_rgb_.channels[0].name = "rgb";
+  cloud_rgb_.channels[0].values.resize (width_ * height_);
 
   cloud2_.height = height_;
   cloud2_.width = width_;
@@ -88,7 +92,30 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   cloud2_.point_step = offset;
   cloud2_.row_step   = cloud2_.point_step * cloud2_.width;
   cloud2_.data.resize (cloud2_.row_step   * cloud2_.height);
-  cloud2_.is_dense = true;
+  cloud2_.is_dense = true;  /// @todo THIS IS WRONG!!!! But might be assumed by PCL.
+
+  // Cloud for depth registered to RGB image
+  cloud2_rgb_.height = height_;
+  cloud2_rgb_.width = width_;
+  cloud2_rgb_.fields.resize (4);
+  cloud2_rgb_.fields[0].name = "x";
+  cloud2_rgb_.fields[1].name = "y";
+  cloud2_rgb_.fields[2].name = "z";
+  cloud2_rgb_.fields[3].name = "rgb";
+
+  // Set all the fields types accordingly
+  offset = 0;
+  for (size_t s = 0; s < cloud2_rgb_.fields.size (); ++s, offset += 4)
+  {
+    cloud2_rgb_.fields[s].offset   = offset;
+    cloud2_rgb_.fields[s].count    = 1;
+    cloud2_rgb_.fields[s].datatype = sensor_msgs::PointField::FLOAT32;
+  }
+
+  cloud2_rgb_.point_step = offset;
+  cloud2_rgb_.row_step   = cloud2_rgb_.point_step * cloud2_rgb_.width;
+  cloud2_rgb_.data.resize (cloud2_rgb_.row_step   * cloud2_rgb_.height);
+  cloud2_rgb_.is_dense = true;
 
   // Assemble the depth image data
   depth_image_.header.frame_id = kinect_depth_frame;
@@ -143,7 +170,7 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
        0, 0, 1.0 / baseline_, 0;
 
   // From (X,Y,Z,W) in depth camera frame to RGB camera frame
-  Eigen::Matrix4d S;
+  //Eigen::Matrix4d S;
   XmlRpc::XmlRpcValue rot, trans;
   if (param_nh.getParam("depth_rgb_rotation", rot) &&
       param_nh.getParam("depth_rgb_translation", trans) &&
@@ -182,6 +209,7 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   pub_ir_      = it.advertiseCamera ("ir/image_raw", 1);
   pub_depth_points_  = comm_nh.advertise<sensor_msgs::PointCloud> ("depth/points", 15);
   pub_depth_points2_ = comm_nh.advertise<sensor_msgs::PointCloud2>("depth/points2", 15);
+  pub_rgb_points_    = comm_nh.advertise<sensor_msgs::PointCloud> ("rgb/points", 15);
   pub_rgb_points2_   = comm_nh.advertise<sensor_msgs::PointCloud2>("rgb/points2", 15);
   pub_imu_ = comm_nh.advertise<sensor_msgs::Imu>("imu", 15);
 }
@@ -344,6 +372,8 @@ void
 
 void KinectDriver::processRgbAndDepth()
 {
+  /// @todo Investigate how well synchronized the depth & color images are
+  
   // Fill raw RGB image message
   if (pub_rgb_.getNumSubscribers () > 0)
   {
@@ -351,18 +381,23 @@ void KinectDriver::processRgbAndDepth()
     memcpy (&rgb_image_.data[0], &rgb_buf_[0], rgb_image_.data.size());
 
     // Check the camera info
+    /// @todo Check this on loading info instead
     if (rgb_info_.height != (size_t)rgb_image_.height || rgb_info_.width != (size_t)rgb_image_.width)
       ROS_DEBUG_THROTTLE (60, "[KinectDriver::rgbCb] Uncalibrated Camera");
   }
 
   // Rectify the RGB image if necessary
+  /// @todo Publish rectified RGB image
   cv::Mat rgb_raw(height_, width_, CV_8UC3, rgb_buf_);
   cv::Mat rgb_rect;
   if (pub_depth_points_.getNumSubscribers () > 0 ||
-      pub_depth_points2_.getNumSubscribers () > 0)
+      pub_depth_points2_.getNumSubscribers () > 0 ||
+      pub_rgb_points_.getNumSubscribers () > 0 ||
+      pub_rgb_points2_.getNumSubscribers () > 0)
     rgb_model_.rectifyImage(rgb_raw, rgb_rect);
   double fT = depth_model_.fx() * baseline_;
 
+  /// @todo Implement Z-buffering in RGB space for the depth point clouds
   // Convert the data to ROS format
   if (pub_depth_points_.getNumSubscribers () > 0)
   {
@@ -401,8 +436,6 @@ void KinectDriver::processRgbAndDepth()
         cloud_.channels[0].values.push_back(*(float*)(&rgb_packed));
       }
     }
-    // Resize to the correct number of points
-    //cloud_.points.resize (nrp);
   }
   
   if (pub_depth_points2_.getNumSubscribers () > 0)
@@ -454,6 +487,116 @@ void KinectDriver::processRgbAndDepth()
       }
     }
   }
+
+  if (pub_rgb_points_.getNumSubscribers () > 0)
+  {
+    // Assemble an ancient sensor_msgs/PointCloud message
+    int16_t MAX_READING = std::numeric_limits<int16_t>::max();
+    cv::Mat z_buffer(height_, width_, CV_32SC2, cv::Scalar(MAX_READING, -1));
+    
+    cloud_rgb_.points.resize (0); // sensor_msgs/PointCloud is sparse
+    cloud_rgb_.channels[0].values.resize(0);
+    int k = 0;
+    for (int v = 0; v < height_; ++v)
+    {
+      for (int u = 0; u < width_; ++u, ++k) 
+      {
+        int r = depth_buf_[k]; // raw reading
+        double d = SHIFT_SCALE * (shift_offset_ - r); // disparity
+        if (d <= 0.0)
+          continue;
+
+        // Compute XYZ in depth camera frame
+        double Z = fT / d;
+        double X = ((u - depth_model_.cx()) / depth_model_.fx()) * Z;
+        double Y = ((v - depth_model_.cy()) / depth_model_.fy()) * Z;
+
+        // Transform to RGB camera frame
+        Eigen::Vector4d xyz_depth, xyz_rgb;
+        xyz_depth << X, Y, Z, 1;
+        xyz_rgb = S * xyz_depth;
+
+        // Project to RGB image
+        int u_rgb = (xyz_rgb.x() / xyz_rgb.z()) * rgb_model_.fx() + rgb_model_.cx() + 0.5;
+        int v_rgb = (xyz_rgb.y() / xyz_rgb.z()) * rgb_model_.fy() + rgb_model_.cy() + 0.5;
+        if (u_rgb < 0 || u_rgb >= width_ || v_rgb < 0 || v_rgb >= height_)
+          continue;
+
+        // Fill in XYZ
+        geometry_msgs::Point32 pt;
+        pt.x = xyz_rgb.x();
+        pt.y = xyz_rgb.y();
+        pt.z = xyz_rgb.z();
+
+        // Z buffer check. Replace an old point if the new one is closer, or
+        // append the new one if it's at an unmapped pixel.
+        cv::Vec2i &reading = z_buffer.at<cv::Vec2i>(v_rgb, u_rgb);
+        int32_t rgb_packed = 0;
+        /// @todo Get rid of cross-hatching in texture - probably from points that get
+        // projected to the same RGB pixel, and we turn one black.
+        if (r < reading[0]) {
+          cv::Vec3b rgb = rgb_rect.at<cv::Vec3b>(v_rgb, u_rgb);
+          rgb_packed = (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
+
+          int index = reading[1];
+          if (index >= 0) {
+            int32_t black = 0;
+            cloud_rgb_.channels[0].values[index] = *(float*)(&black);
+          }
+
+          reading[0] = r;
+        }
+        reading[1] = cloud_rgb_.points.size();
+        cloud_rgb_.points.push_back(pt);
+        cloud_rgb_.channels[0].values.push_back(*(float*)(&rgb_packed));
+      }
+    }
+  }
+
+  if (pub_rgb_points2_.getNumSubscribers () > 0)
+  {
+    float bad_point = std::numeric_limits<float>::quiet_NaN ();
+    float* pt_data = reinterpret_cast<float*>(&cloud2_rgb_.data[0]);
+    std::fill_n(pt_data, height_ * width_ * 4, bad_point);
+    int k = 0;
+    for (int v = 0; v < height_; ++v)
+    {
+      for (int u = 0; u < width_; ++u, ++k) 
+      {
+        double d = SHIFT_SCALE * (shift_offset_ - depth_buf_[k]); // disparity
+        if (d <= 0.0)
+          continue;
+
+        // Compute XYZ in depth camera frame
+        double Z = fT / d;
+        double X = ((u - depth_model_.cx()) / depth_model_.fx()) * Z;
+        double Y = ((v - depth_model_.cy()) / depth_model_.fy()) * Z;
+
+        // Transform to RGB camera frame
+        Eigen::Vector4d xyz_depth, xyz_rgb;
+        xyz_depth << X, Y, Z, 1;
+        xyz_rgb = S * xyz_depth;
+
+        // Project to RGB image
+        int u_rgb = (xyz_rgb.x() / xyz_rgb.z()) * rgb_model_.fx() + rgb_model_.cx() + 0.5;
+        int v_rgb = (xyz_rgb.y() / xyz_rgb.z()) * rgb_model_.fy() + rgb_model_.cy() + 0.5;
+        if (u_rgb < 0 || u_rgb >= width_ || v_rgb < 0 || v_rgb >= height_)
+          continue;
+
+        // Fill in point data
+        cv::Vec3b rgb = rgb_rect.at<cv::Vec3b>(v_rgb, u_rgb);
+        int32_t rgb_packed = (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
+        float* pt = pt_data + (v_rgb*width_ + u_rgb)*4;
+        // Z buffer check. Fill the point if old Z value is further away *or* NaN.
+        if (!(pt[2] < xyz_rgb.z())) {
+          pt[0] = xyz_rgb.x();
+          pt[1] = xyz_rgb.y();
+          pt[2] = xyz_rgb.z();
+          memcpy(&pt[3], &rgb_packed, sizeof(int32_t));
+        }
+      }
+    }
+  }
   
   if (pub_depth_.getNumSubscribers () > 0)
   { 
@@ -467,12 +610,10 @@ void KinectDriver::processRgbAndDepth()
 void 
   KinectDriver::publish ()
 {
-  /// @todo Investigate how well synchronized the depth & color images are
-  
   /// @todo Do something with the real timestamps from the device
   // Get the current time
   ros::Time time = ros::Time::now ();
-  cloud_.header.stamp = cloud2_.header.stamp = time;
+  cloud_.header.stamp = cloud2_.header.stamp = cloud_rgb_.header.stamp = cloud2_rgb_.header.stamp = time;
   rgb_image_.header.stamp   = rgb_info_.header.stamp   = time;
   depth_image_.header.stamp = depth_info_.header.stamp = time;
 
@@ -494,6 +635,10 @@ void
     pub_depth_points_.publish  (boost::make_shared<const sensor_msgs::PointCloud> (cloud_));
   if (pub_depth_points2_.getNumSubscribers () > 0)
     pub_depth_points2_.publish (boost::make_shared<const sensor_msgs::PointCloud2> (cloud2_));
+  if (pub_rgb_points_.getNumSubscribers () > 0)
+    pub_rgb_points_.publish  (boost::make_shared<const sensor_msgs::PointCloud> (cloud_rgb_));
+  if (pub_rgb_points2_.getNumSubscribers () > 0)
+    pub_rgb_points2_.publish (boost::make_shared<const sensor_msgs::PointCloud2> (cloud2_rgb_));
 
   rgb_sent_   = true;
   depth_sent_ = true;

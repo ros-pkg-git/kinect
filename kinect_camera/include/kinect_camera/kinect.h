@@ -141,7 +141,7 @@ namespace kinect_camera
       image_transport::CameraPublisher pub_rgb_, pub_depth_, pub_ir_;
       image_transport::Publisher pub_rgb_rect_;
       ros::Publisher pub_depth_points_, pub_depth_points2_;
-      ros::Publisher pub_rgb_points2_;
+      ros::Publisher pub_rgb_points_, pub_rgb_points2_;
       ros::Publisher pub_imu_;
 
       /** \brief Camera info manager objects. */
@@ -160,6 +160,7 @@ namespace kinect_camera
       double shift_offset_;
       double baseline_; // between IR projector and depth camera
       Eigen::Matrix<double, 3, 4> depth_to_rgb_;
+      Eigen::Matrix4d S;
       static const double SHIFT_SCALE;
       
       /** \brief Freenect context structure. */
@@ -171,13 +172,13 @@ namespace kinect_camera
       /** \brief True if we're acquiring images. */
       bool started_;
 
-      /// @todo May actually want to allocate each time when using nodelets
+      /// @todo Get rid of member messages since we allocate a shared_ptr each time
       /** \brief Image data. */
       sensor_msgs::Image rgb_image_, depth_image_;
       /** \brief PointCloud data. */
-      sensor_msgs::PointCloud cloud_;
+      sensor_msgs::PointCloud cloud_, cloud_rgb_;
       /** \brief PointCloud2 data. */
-      sensor_msgs::PointCloud2 cloud2_;
+      sensor_msgs::PointCloud2 cloud2_, cloud2_rgb_;
       /** \brief Camera info data. */
       sensor_msgs::CameraInfo rgb_info_, depth_info_;
       /** \brief Accelerometer data. */
