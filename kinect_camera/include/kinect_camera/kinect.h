@@ -210,6 +210,8 @@ namespace kinect_camera
         * \param buf the depth buffer
         */
       void depthBufferTo8BitImage(const freenect_depth * buf);
+    public:
+      EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
   };
 
 } // namespace kinect_camera
