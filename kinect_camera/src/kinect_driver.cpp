@@ -133,7 +133,6 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   // Read additional calibration parameters
   param_nh.param ("shift_offset", shift_offset_, 1084.0);
   param_nh.param ("projector_depth_baseline", baseline_, 0.075); // 7.5cm
-  ROS_INFO("Shift offset: %f, baseline: %f", shift_offset_, baseline_);
 
   // Compute transform matrix from (u,v,d) of depth camera to (u,v) of RGB camera
   // From (u,v,d,1) in depth image to (X,Y,Z,W) in depth camera frame
@@ -181,8 +180,9 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   pub_rgb_rect_ = it.advertise("rgb/image_rect_color", 1);
   pub_depth_   = it.advertiseCamera ("depth/image_raw", 1);
   pub_ir_      = it.advertiseCamera ("ir/image_raw", 1);
-  pub_points_  = comm_nh.advertise<sensor_msgs::PointCloud>("points", 15);
-  pub_points2_ = comm_nh.advertise<sensor_msgs::PointCloud2>("points2", 15);
+  pub_depth_points_  = comm_nh.advertise<sensor_msgs::PointCloud> ("depth/points", 15);
+  pub_depth_points2_ = comm_nh.advertise<sensor_msgs::PointCloud2>("depth/points2", 15);
+  pub_rgb_points2_   = comm_nh.advertise<sensor_msgs::PointCloud2>("rgb/points2", 15);
   pub_imu_ = comm_nh.advertise<sensor_msgs::Imu>("imu", 15);
 }
 
@@ -358,13 +358,13 @@ void KinectDriver::processRgbAndDepth()
   // Rectify the RGB image if necessary
   cv::Mat rgb_raw(height_, width_, CV_8UC3, rgb_buf_);
   cv::Mat rgb_rect;
-  if (pub_points_.getNumSubscribers () > 0 || pub_points2_.getNumSubscribers () > 0)
+  if (pub_depth_points_.getNumSubscribers () > 0 ||
+      pub_depth_points2_.getNumSubscribers () > 0)
     rgb_model_.rectifyImage(rgb_raw, rgb_rect);
   double fT = depth_model_.fx() * baseline_;
 
   // Convert the data to ROS format
-  /// @todo Make this use new projection stuff
-  if (pub_points_.getNumSubscribers () > 0)
+  if (pub_depth_points_.getNumSubscribers () > 0)
   {
     // Assemble an ancient sensor_msgs/PointCloud message
     cloud_.points.resize (0); // sensor_msgs/PointCloud is sparse
@@ -405,7 +405,7 @@ void KinectDriver::processRgbAndDepth()
     //cloud_.points.resize (nrp);
   }
   
-  if (pub_points2_.getNumSubscribers () > 0)
+  if (pub_depth_points2_.getNumSubscribers () > 0)
   {
     // Assemble an awesome sensor_msgs/PointCloud2 message
     float bad_point = std::numeric_limits<float>::quiet_NaN ();
@@ -415,6 +415,8 @@ void KinectDriver::processRgbAndDepth()
       for (int u = 0; u < width_; ++u, ++k) 
       {
         float* pt_data = reinterpret_cast<float*>(&cloud2_.data[0] + k * cloud2_.point_step);
+        /// @todo Possible optimization: lookup table mapping shift to depth. Then skip
+        // disparity -> XYZW in RGB pixel correspondence.
         double d = SHIFT_SCALE * (shift_offset_ - depth_buf_[k]); // disparity
         if (d <= 0.0) {
           // not valid
@@ -488,10 +490,10 @@ void
     pub_depth_.publish (boost::make_shared<const sensor_msgs::Image> (depth_image_), boost::make_shared<const sensor_msgs::CameraInfo> (depth_info_));
 
   // Publish the PointCloud messages
-  if (pub_points_.getNumSubscribers () > 0)
-    pub_points_.publish  (boost::make_shared<const sensor_msgs::PointCloud> (cloud_));
-  if (pub_points2_.getNumSubscribers () > 0)
-    pub_points2_.publish (boost::make_shared<const sensor_msgs::PointCloud2> (cloud2_));
+  if (pub_depth_points_.getNumSubscribers () > 0)
+    pub_depth_points_.publish  (boost::make_shared<const sensor_msgs::PointCloud> (cloud_));
+  if (pub_depth_points2_.getNumSubscribers () > 0)
+    pub_depth_points2_.publish (boost::make_shared<const sensor_msgs::PointCloud2> (cloud2_));
 
   rgb_sent_   = true;
   depth_sent_ = true;

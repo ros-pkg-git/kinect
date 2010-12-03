@@ -140,7 +140,8 @@ namespace kinect_camera
       /** \brief ROS publishers. */
       image_transport::CameraPublisher pub_rgb_, pub_depth_, pub_ir_;
       image_transport::Publisher pub_rgb_rect_;
-      ros::Publisher pub_points_, pub_points2_;
+      ros::Publisher pub_depth_points_, pub_depth_points2_;
+      ros::Publisher pub_rgb_points2_;
       ros::Publisher pub_imu_;
 
       /** \brief Camera info manager objects. */
