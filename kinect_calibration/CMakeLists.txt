@@ -38,3 +38,5 @@ rosbuild_add_executable(acquire_data src/acquire_data.cpp)
 target_link_libraries(acquire_data ${OPENGL_LIBRARIES} ${GLUT_LIBRARY})
 
 rosbuild_add_executable(calibrate src/calibrate.cpp)
+
+#rosbuild_add_executable(cal_check_ir src/cal_check_ir.cpp)

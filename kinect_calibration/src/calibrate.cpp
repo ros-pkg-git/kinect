@@ -47,8 +47,8 @@
 #include <math.h>
 #include <opencv2/core/core.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
-#include <opencv/cv.h> // cv::undistort isn't in the above!?
 
 #include <Eigen/Core>
 #include <Eigen/LU>
@@ -272,7 +272,14 @@ main(int argc, char **argv)
         printf("%f ",*dptr++);
       printf("\n");
     }
-  printf("\nAssuming zero distortion\n");
+  //printf("\nAssuming zero distortion\n");
+  dptr = distCoeffs.ptr<double>(0);
+  printf("\nDistortion coefficients:\n"
+         "k1: %f\n"
+         "k2: %f\n"
+         "t1: %f\n"
+         "t2: %f\n"
+         "k3: %f\n", dptr[0], dptr[1], dptr[2], dptr[3], dptr[4]);
   
   printf("\nReprojection error = %f\n\n", rp_err);
 
@@ -391,8 +398,8 @@ main(int argc, char **argv)
                            rvecs, tvecs,
                            //CV_CALIB_FIX_K1 |
                            //CV_CALIB_FIX_K2 |
-                           //CV_CALIB_FIX_K3 |
-                           //CV_CALIB_ZERO_TANGENT_DIST |
+                           CV_CALIB_FIX_K3 |
+                           CV_CALIB_ZERO_TANGENT_DIST |
                            //CV_CALIB_FIX_PRINCIPAL_POINT |
                            CV_CALIB_FIX_ASPECT_RATIO
                           );
