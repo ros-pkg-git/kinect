@@ -31,5 +31,3 @@ target_link_libraries (kinect_driver_nodelets kinect_driver)
 
 rosbuild_add_executable (kinect_node src/kinect_node.cpp)
 target_link_libraries (kinect_node kinect_driver)
-
-rosbuild_add_executable (calibration_synchronizer src/calibration_synchronizer.cpp)
