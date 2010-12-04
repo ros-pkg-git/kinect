@@ -353,20 +353,12 @@ void
 {
   boost::mutex::scoped_lock lock (buffer_mutex_);
 
-  // Reusing rgb_image_ for now
+  // Reusing rgb_image_ for now, hacky as it is
+  rgb_buf_ = reinterpret_cast<freenect_pixel*>(rgb);
   rgb_sent_ = false;
 
-  if (pub_ir_.getNumSubscribers () > 0)
-  {
-    /// @todo Publish original 16-bit output? Shifting down to 8-bit for convenience for now
-    for (int i = 0; i < FREENECT_FRAME_PIX; ++i) {
-      int val = rgb[i];
-      rgb_image_.data[i] = (val >> 2) & 0xff;
-    }
-  }
-
   if (!depth_sent_) {
-    publish ();
+    processRgbAndDepth ();
   }
 }
 
@@ -375,7 +367,8 @@ void KinectDriver::processRgbAndDepth()
   /// @todo Investigate how well synchronized the depth & color images are
   
   // Fill raw RGB image message
-  if (pub_rgb_.getNumSubscribers () > 0)
+  if (pub_rgb_.getNumSubscribers () > 0 &&
+      config_.color_format != FREENECT_FORMAT_IR)
   {
     // Copy the image data
     memcpy (&rgb_image_.data[0], &rgb_buf_[0], rgb_image_.data.size());
@@ -385,6 +378,19 @@ void KinectDriver::processRgbAndDepth()
     if (rgb_info_.height != (size_t)rgb_image_.height || rgb_info_.width != (size_t)rgb_image_.width)
       ROS_DEBUG_THROTTLE (60, "[KinectDriver::rgbCb] Uncalibrated Camera");
   }
+
+  if (pub_ir_.getNumSubscribers () > 0 &&
+      config_.color_format == FREENECT_FORMAT_IR)
+  {
+    /// @todo Publish original 16-bit output? Shifting down to 8-bit for convenience for now
+    freenect_pixel_ir *ir = reinterpret_cast<freenect_pixel_ir*>(rgb_buf_);
+    for (int i = 0; i < FREENECT_FRAME_PIX; ++i) {
+      int val = ir[i];
+      rgb_image_.data[i] = (val >> 2) & 0xff;
+    }
+  }
+
+  bool have_rgb = config_.color_format == FREENECT_FORMAT_RGB;
 
   // Rectify the RGB image if necessary
   /// @todo Publish rectified RGB image
@@ -396,13 +402,16 @@ void KinectDriver::processRgbAndDepth()
       pub_rgb_points_.getNumSubscribers () > 0 ||
       pub_rgb_points2_.getNumSubscribers () > 0)
   {
-    rgb_model_.rectifyImage(rgb_raw, rgb_rect_);
+    if (have_rgb)
+      rgb_model_.rectifyImage(rgb_raw, rgb_rect_);
+    else
+      ROS_WARN_THROTTLE(60, "Color format must be RGB to publish point clouds");
   }
   double fT = depth_model_.fx() * baseline_;
 
   /// @todo Implement Z-buffering in RGB space for the depth point clouds
   // Convert the data to ROS format
-  if (pub_depth_points_.getNumSubscribers () > 0)
+  if (pub_depth_points_.getNumSubscribers () > 0 && have_rgb)
   {
     // Assemble an ancient sensor_msgs/PointCloud message
     cloud_.points.resize (0); // sensor_msgs/PointCloud is sparse
@@ -441,7 +450,7 @@ void KinectDriver::processRgbAndDepth()
     }
   }
   
-  if (pub_depth_points2_.getNumSubscribers () > 0)
+  if (pub_depth_points2_.getNumSubscribers () > 0 && have_rgb)
   {
     // Assemble an awesome sensor_msgs/PointCloud2 message
     float bad_point = std::numeric_limits<float>::quiet_NaN ();
@@ -491,7 +500,7 @@ void KinectDriver::processRgbAndDepth()
     }
   }
 
-  if (pub_rgb_points_.getNumSubscribers () > 0)
+  if (pub_rgb_points_.getNumSubscribers () > 0 && have_rgb)
   {
     // Assemble an ancient sensor_msgs/PointCloud message
     int16_t MAX_READING = std::numeric_limits<int16_t>::max();
@@ -556,7 +565,7 @@ void KinectDriver::processRgbAndDepth()
     }
   }
 
-  if (pub_rgb_points2_.getNumSubscribers () > 0)
+  if (pub_rgb_points2_.getNumSubscribers () > 0 && have_rgb)
   {
     float bad_point = std::numeric_limits<float>::quiet_NaN ();
     float* pt_data = reinterpret_cast<float*>(&cloud2_rgb_.data[0]);
@@ -621,6 +630,7 @@ void
   depth_image_.header.stamp = depth_info_.header.stamp = time;
 
   // Publish RGB or IR Image
+  bool have_rgb = config_.color_format == FREENECT_FORMAT_RGB;
   if (config_.color_format == FREENECT_FORMAT_IR)
   {
     if (pub_ir_.getNumSubscribers() > 0)
@@ -632,7 +642,7 @@ void
     if (pub_rgb_.getNumSubscribers () > 0)
       pub_rgb_.publish (boost::make_shared<const sensor_msgs::Image> (rgb_image_),
                         boost::make_shared<const sensor_msgs::CameraInfo> (rgb_info_));
-    if (pub_rgb_rect_.getNumSubscribers () > 0)
+    if (pub_rgb_rect_.getNumSubscribers () > 0 && have_rgb)
     {
       IplImage ipl = rgb_rect_;
       sensor_msgs::ImagePtr msg_ptr = sensor_msgs::CvBridge::cvToImgMsg(&ipl, "rgb8");
@@ -647,13 +657,13 @@ void
     pub_depth_.publish (boost::make_shared<const sensor_msgs::Image> (depth_image_), boost::make_shared<const sensor_msgs::CameraInfo> (depth_info_));
 
   // Publish the PointCloud messages
-  if (pub_depth_points_.getNumSubscribers () > 0)
+  if (pub_depth_points_.getNumSubscribers () > 0 && have_rgb)
     pub_depth_points_.publish  (boost::make_shared<const sensor_msgs::PointCloud> (cloud_));
-  if (pub_depth_points2_.getNumSubscribers () > 0)
+  if (pub_depth_points2_.getNumSubscribers () > 0 && have_rgb)
     pub_depth_points2_.publish (boost::make_shared<const sensor_msgs::PointCloud2> (cloud2_));
-  if (pub_rgb_points_.getNumSubscribers () > 0)
+  if (pub_rgb_points_.getNumSubscribers () > 0 && have_rgb)
     pub_rgb_points_.publish  (boost::make_shared<const sensor_msgs::PointCloud> (cloud_rgb_));
-  if (pub_rgb_points2_.getNumSubscribers () > 0)
+  if (pub_rgb_points2_.getNumSubscribers () > 0 && have_rgb)
     pub_rgb_points2_.publish (boost::make_shared<const sensor_msgs::PointCloud2> (cloud2_rgb_));
 
   rgb_sent_   = true;
