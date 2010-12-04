@@ -163,8 +163,6 @@ void writeCalibration(FILE *f, const cv::Mat& cameraMatrix, const cv::Mat& distC
 int
 main(int argc, char **argv)
 {
-  printf("Optional arguments: [data dir] [#rows #cols]\n");
-
   // checkerboard pattern
   int ccols = 0;
   int crows = 0;
@@ -199,7 +197,7 @@ main(int argc, char **argv)
   {
     printf("Must give the checkerboard dimensions and data directory.\n"
            "Usage:\n"
-           "%s -r ROWS -c COLS -s SQUARE_SIZE\n", argv[0]);
+           "%s -r ROWS -c COLS -s SQUARE_SIZE my_data_dir\n", argv[0]);
     return 1;
   }
     

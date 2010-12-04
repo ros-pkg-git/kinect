@@ -60,6 +60,7 @@ using namespace std;
 cv::Size pattern_size;
 
 // saving images
+char *fdir = NULL;
 int ir_num = 0;                 // individual frames
 int rgb_num = 0;
 int depth_num = 0;
@@ -318,10 +319,12 @@ depth_cb (freenect_device * dev, void *v_depth, uint32_t timestamp)
       uint8_t *rgbi = (uint8_t *)depth;
       memcpy(imgi,rgbi,FREENECT_FRAME_PIX*2);
       char fname[1024];
-      sprintf(fname,"img_depth_%02d.png",depth_num);
+      sprintf(fname,"%s/img_depth_%02d.png", fdir, depth_num);
       depth_num++;
-      cv::imwrite(fname,img);
-      printf("Wrote depth image %s\n", fname);
+      if (cv::imwrite(fname,img))
+        printf("Wrote depth image %s\n", fname);
+      else
+        printf("ERROR: failed to write image %s\n", fname);
       saveDepth = false;
     }
 
@@ -414,10 +417,12 @@ rgb_cb (freenect_device * dev, freenect_pixel * rgb, uint32_t timestamp)
   if (saveRGB && ret)
     {
       char fname[1024];
-      sprintf(fname,"img_rgb_%02d.png",rgb_num);
+      sprintf(fname,"%s/img_rgb_%02d.png", fdir, rgb_num);
       rgb_num++;
-      cv::imwrite(fname,img);
-      printf("Wrote RGB image %s\n", fname);
+      if (cv::imwrite(fname,img))
+        printf("Wrote RGB image %s\n", fname);
+      else
+        printf("ERROR: failed to write image %s\n", fname);
       saveRGB = false;
     }
 
@@ -471,10 +476,12 @@ ir_cb (freenect_device * dev, freenect_pixel_ir * rgb, uint32_t timestamp)
   if (saveIR && ret)
     {
       char fname[1024];
-      sprintf(fname,"img_ir_%02d.png",ir_num);
+      sprintf(fname,"%s/img_ir_%02d.png", fdir, ir_num);
       ir_num++;
-      cv::imwrite(fname,img);
-      printf("Wrote IR image %s\n", fname);
+      if (cv::imwrite(fname,img))
+        printf("Wrote IR image %s\n", fname);
+      else
+        printf("ERROR: failed to write image %s\n", fname);
       saveIR = false;
     }
 
@@ -533,10 +540,14 @@ main(int argc, char **argv)
     }
   }
 
-  if (pattern_size.width == 0 || pattern_size.height == 0)
+  if (optind < argc)
+    fdir = argv[optind];
+
+  if (pattern_size.width == 0 || pattern_size.height == 0 || fdir == NULL)
   {
-    printf("Must set the checkerboard width and height. Usage:\n"
-           "%s -r ROWS -c COLS\n", argv[0]);
+    printf("Must give the checkerboard width/height and data directory.\n"
+           "Usage:\n"
+           "%s -r ROWS -c COLS my_data_dir\n", argv[0]);
     return 1;
   }
 
