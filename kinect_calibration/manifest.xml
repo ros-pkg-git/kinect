@@ -9,6 +9,7 @@
   <review status="unreviewed" notes=""/>
   <url>http://ros.org/wiki/kinect_calibration</url>
 
+  <depend package="ros"/> <!-- Only for install_calibration script, needs rospack -->
   <depend package="freenect"/>
   <depend package="opencv2"/>
   <depend package="eigen"/>
