@@ -4,8 +4,10 @@
   <node pkg="nodelet" type="nodelet" name="kinect_driver" args="load kinect_camera/KinectDriverNodelet kinect_manager" output="screen">
     <remap from="camera" to="kinect" />
     <param name="device_id" value="0" />
+    <param name="camera_name" value="kinect" />
     <param name="rgb/camera_info_url"   value="file://$(find kinect_camera)/info/calibration_rgb.yaml" />
     <param name="depth/camera_info_url" value="file://$(find kinect_camera)/info/calibration_depth.yaml" />
+    <rosparam command="load" file="$(find kinect_camera)/info/kinect_params.yaml" />
   </node>
 
 </launch>

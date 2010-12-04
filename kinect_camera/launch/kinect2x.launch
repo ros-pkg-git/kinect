@@ -1,15 +1,16 @@
 <launch>
-  <node pkg="kinect_camera" type="kinect_node" name="kinect_node_1" output="screen">
-    <remap from="camera" to="kinect_1" />
-    <param name="device_id" value="0" />
-    <param name="rgb/camera_info_url"   value="file://$(find kinect_camera)/info/calibration_rgb.yaml" />
-    <param name="depth/camera_info_url" value="file://$(find kinect_camera)/info/calibration_depth.yaml" />
-  </node>
+<!-- TODO: Shouldn't be loading the exact same calibration for both kinects -->
 
-  <node pkg="kinect_camera" type="kinect_node" name="kinect_node_2" output="screen">
-    <remap from="camera" to="kinect_2" />
-    <param name="device_id" value="1" />
-    <param name="rgb/camera_info_url"   value="file://$(find kinect_camera)/info/calibration_rgb.yaml" />
-    <param name="depth/camera_info_url" value="file://$(find kinect_camera)/info/calibration_depth.yaml" />
-  </node>
+  <include file="$(find kinect_camera)/launch/kinect_node.launch">
+    <arg name="node_name" value="kinect_driver_1" />
+    <arg name="camera_ns" value="kinect_1" />
+    <arg name="device_id" value="0" />
+  </include>
+
+  <include file="$(find kinect_camera)/launch/kinect_node.launch">
+    <arg name="node_name" value="kinect_driver_2" />
+    <arg name="camera_ns" value="kinect_2" />
+    <arg name="device_id" value="1" />
+  </include>
+
 </launch>

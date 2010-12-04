@@ -1,7 +1,11 @@
 <launch>
-  <node pkg="kinect_camera" type="kinect_node" name="kinect_driver" output="screen">
-    <remap from="camera" to="kinect" />
-    <param name="device_id" value="0" />
+  <arg name="node_name" default="kinect_driver" />
+  <arg name="camera_ns" default="kinect" />
+  <arg name="device_id" default="0" />
+
+  <node pkg="kinect_camera" type="kinect_node" name="$(arg node_name)" output="screen">
+    <remap from="camera" to="$(arg camera_ns)" />
+    <param name="device_id" value="$(arg device_id)" />
     <param name="camera_name" value="kinect" />
     <param name="rgb/camera_info_url"   value="file://$(find kinect_camera)/info/calibration_rgb.yaml" />
     <param name="depth/camera_info_url" value="file://$(find kinect_camera)/info/calibration_depth.yaml" />
