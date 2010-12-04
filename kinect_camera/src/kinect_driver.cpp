@@ -63,8 +63,7 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   // Assemble the point cloud data
   std::string kinect_depth_frame;
   param_nh.param ("kinect_depth_frame", kinect_depth_frame, std::string ("/kinect_depth"));
-  /// @todo cloud2_rgb_ should be in RGB frame
-  cloud_.header.frame_id = cloud2_.header.frame_id = cloud_rgb_.header.frame_id = cloud2_rgb_.header.frame_id = kinect_depth_frame;
+  cloud_.header.frame_id = cloud2_.header.frame_id = kinect_depth_frame;
   cloud_.channels.resize (1);
   cloud_.channels[0].name = "rgb";
   cloud_.channels[0].values.resize (width_ * height_);
@@ -129,10 +128,10 @@ KinectDriver::KinectDriver (ros::NodeHandle comm_nh, ros::NodeHandle param_nh)
   // Assemble the image data
   std::string kinect_RGB_frame;
   param_nh.param ("kinect_rgb_frame", kinect_RGB_frame, std::string ("/kinect_rgb"));
-  rgb_image_.header.frame_id = kinect_RGB_frame;
+  rgb_image_.header.frame_id = rgb_info_.header.frame_id = kinect_RGB_frame;
   rgb_image_.height = height_;
   rgb_image_.width = width_;
-  rgb_info_.header.frame_id = rgb_image_.header.frame_id; 
+  cloud_rgb_.header.frame_id = cloud2_rgb_.header.frame_id = kinect_RGB_frame;
 
   // Read calibration parameters from disk
   std::string cam_name, rgb_info_url, depth_info_url;
@@ -636,7 +635,10 @@ void
     if (pub_rgb_rect_.getNumSubscribers () > 0)
     {
       IplImage ipl = rgb_rect_;
-      pub_rgb_rect_.publish(sensor_msgs::CvBridge::cvToImgMsg(&ipl, "rgb8"));
+      sensor_msgs::ImagePtr msg_ptr = sensor_msgs::CvBridge::cvToImgMsg(&ipl, "rgb8");
+      msg_ptr->header.stamp = time;
+      msg_ptr->header.frame_id = rgb_info_.header.frame_id;
+      pub_rgb_rect_.publish(msg_ptr);
     }
   }
 
