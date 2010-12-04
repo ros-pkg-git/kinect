@@ -40,6 +40,7 @@
 
 #include "kinect_camera/kinect.h"
 #include <sensor_msgs/image_encodings.h>
+#include <cv_bridge/CvBridge.h>
 #include <boost/make_shared.hpp>
 
 namespace kinect_camera 
@@ -389,12 +390,15 @@ void KinectDriver::processRgbAndDepth()
   // Rectify the RGB image if necessary
   /// @todo Publish rectified RGB image
   cv::Mat rgb_raw(height_, width_, CV_8UC3, rgb_buf_);
-  cv::Mat rgb_rect;
-  if (pub_depth_points_.getNumSubscribers () > 0 ||
+  //cv::Mat rgb_rect_;
+  if (pub_rgb_rect_.getNumSubscribers () > 0 ||
+      pub_depth_points_.getNumSubscribers () > 0 ||
       pub_depth_points2_.getNumSubscribers () > 0 ||
       pub_rgb_points_.getNumSubscribers () > 0 ||
       pub_rgb_points2_.getNumSubscribers () > 0)
-    rgb_model_.rectifyImage(rgb_raw, rgb_rect);
+  {
+    rgb_model_.rectifyImage(rgb_raw, rgb_rect_);
+  }
   double fT = depth_model_.fx() * baseline_;
 
   /// @todo Implement Z-buffering in RGB space for the depth point clouds
@@ -430,7 +434,7 @@ void KinectDriver::processRgbAndDepth()
         
         int32_t rgb_packed = 0;
         if (u_rgb >= 0 && u_rgb < width_ && v_rgb >= 0 && v_rgb < height_) {
-          cv::Vec3b rgb = rgb_rect.at<cv::Vec3b>(v_rgb, u_rgb);
+          cv::Vec3b rgb = rgb_rect_.at<cv::Vec3b>(v_rgb, u_rgb);
           rgb_packed = (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
         }
         cloud_.channels[0].values.push_back(*(float*)(&rgb_packed));
@@ -480,7 +484,7 @@ void KinectDriver::processRgbAndDepth()
         // Fill in RGB
         int32_t rgb_packed = 0;
         if (u_rgb >= 0 && u_rgb < width_ && v_rgb >= 0 && v_rgb < height_) {
-          cv::Vec3b rgb = rgb_rect.at<cv::Vec3b>(v_rgb, u_rgb);
+          cv::Vec3b rgb = rgb_rect_.at<cv::Vec3b>(v_rgb, u_rgb);
           rgb_packed = (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
         }
         memcpy(&pt_data[3], &rgb_packed, sizeof(int32_t));
@@ -535,7 +539,7 @@ void KinectDriver::processRgbAndDepth()
         /// @todo Get rid of cross-hatching in texture - probably from points that get
         // projected to the same RGB pixel, and we turn one black.
         if (r < reading[0]) {
-          cv::Vec3b rgb = rgb_rect.at<cv::Vec3b>(v_rgb, u_rgb);
+          cv::Vec3b rgb = rgb_rect_.at<cv::Vec3b>(v_rgb, u_rgb);
           rgb_packed = (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
 
           int index = reading[1];
@@ -584,7 +588,7 @@ void KinectDriver::processRgbAndDepth()
           continue;
 
         // Fill in point data
-        cv::Vec3b rgb = rgb_rect.at<cv::Vec3b>(v_rgb, u_rgb);
+        cv::Vec3b rgb = rgb_rect_.at<cv::Vec3b>(v_rgb, u_rgb);
         int32_t rgb_packed = (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
         float* pt = pt_data + (v_rgb*width_ + u_rgb)*4;
         // Z buffer check. Fill the point if old Z value is further away *or* NaN.
@@ -621,10 +625,20 @@ void
   if (config_.color_format == FREENECT_FORMAT_IR)
   {
     if (pub_ir_.getNumSubscribers() > 0)
-      pub_ir_.publish (boost::make_shared<const sensor_msgs::Image> (rgb_image_), boost::make_shared<const sensor_msgs::CameraInfo> (depth_info_));
+      pub_ir_.publish (boost::make_shared<const sensor_msgs::Image> (rgb_image_),
+                       boost::make_shared<const sensor_msgs::CameraInfo> (depth_info_));
   }
-  else if (pub_rgb_.getNumSubscribers () > 0)
-    pub_rgb_.publish (boost::make_shared<const sensor_msgs::Image> (rgb_image_), boost::make_shared<const sensor_msgs::CameraInfo> (rgb_info_)); 
+  else
+  {
+    if (pub_rgb_.getNumSubscribers () > 0)
+      pub_rgb_.publish (boost::make_shared<const sensor_msgs::Image> (rgb_image_),
+                        boost::make_shared<const sensor_msgs::CameraInfo> (rgb_info_));
+    if (pub_rgb_rect_.getNumSubscribers () > 0)
+    {
+      IplImage ipl = rgb_rect_;
+      pub_rgb_rect_.publish(sensor_msgs::CvBridge::cvToImgMsg(&ipl, "rgb8"));
+    }
+  }
 
   // Publish depth Image
   if (pub_depth_.getNumSubscribers () > 0)

@@ -29,6 +29,7 @@
   <depend package="freenect" />
   <depend package="dynamic_reconfigure" />
   <depend package="eigen" />
+  <depend package="cv_bridge" />
 
   <export>
     <cpp cflags="-I${prefix}/include" lflags="-Wl,-rpath,${prefix}/lib -L${prefix}/lib -lkinect_driver -lkinect_driver_nodelets" />

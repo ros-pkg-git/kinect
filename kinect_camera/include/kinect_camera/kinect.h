@@ -183,6 +183,7 @@ namespace kinect_camera
       sensor_msgs::CameraInfo rgb_info_, depth_info_;
       /** \brief Accelerometer data. */
       sensor_msgs::Imu imu_msg_;
+      cv::Mat rgb_rect_;
 
       bool depth_sent_;
       bool rgb_sent_;
