@@ -1,7 +1,9 @@
 <package>
   <description brief="kinect_calibration">
 
-     kinect_calibration
+     Utilities for calibrating the Microsoft Kinect sensor. After calibration,
+     the kinect_camera driver can produce point clouds with the depth and RGB
+     readings accurately registered to each other.
 
   </description>
   <author>Kurt Konolige, Patrick Mihelich</author>
