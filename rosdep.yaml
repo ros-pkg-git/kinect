@@ -1,5 +1,7 @@
 libusb1.0:
   ubuntu: libusb-1.0-0-dev
+libxmu:
+  ubuntu: libxmu-dev
 git: 
   ubuntu: git-core
   debian: git-core
