@@ -148,16 +148,18 @@ int main(int argc, char* argv[])
 		return 1;
 	}
 	
-	openAuxDevice();
+	ros::init(argc, argv, "kinect_aux");
+	ros::NodeHandle n;
+	
+	int deviceIndex;
+	n.param<int>("device_index", deviceIndex, 0);
+	openAuxDevice(deviceIndex);
 	if (!dev)
 	{
 		ROS_ERROR_STREAM("No valid aux device found");
 		libusb_exit(0);
 		return 2;
 	}
-	
-	ros::init(argc, argv, "kinect_aux");
-	ros::NodeHandle n;
 	
 	pub_imu = n.advertise<sensor_msgs::Imu>("imu", 15);
 	pub_tilt_angle = n.advertise<std_msgs::Float64>("cur_tilt_angle", 15);
