@@ -1,23 +1,38 @@
 #include <libusb.h>
-#include <sensor_msgs/Imu.h>
 #include <ros/ros.h>
+#include <std_msgs/UInt8.h>
+#include <std_msgs/UInt16.h>
+#include <std_msgs/Float64.h>
+#include <sensor_msgs/Imu.h>
 
+// VID and PID for Kinect and motor/acc/leds
 #define MS_MAGIC_VENDOR 0x45e
 #define MS_MAGIC_MOTOR_PRODUCT 0x02b0
+// Constants for accelerometers
 #define GRAVITY 9.80665
 #define FREENECT_COUNTS_PER_G 819.
+// The kinect can tilt from +31 to -31 degrees in what looks like 1 degree increments
+// The control input looks like 2*desired_degrees
+#define MAX_TILT_ANGLE 31.
+#define MIN_TILT_ANGLE (-31.)
 
 ros::Publisher pub_imu;
+ros::Publisher pub_tilt_angle;
+ros::Publisher pub_tilt_status;
 
-libusb_device_handle *openAux(int index = 0)
+ros::Subscriber sub_tilt_angle;
+ros::Subscriber sub_led_option;
+ 
+libusb_device_handle *dev(0);
+
+void openAuxDevice(int index = 0)
 {
-	libusb_device_handle* dev(0);
 	libusb_device **devs; //pointer to pointer of device, used to retrieve a list of devices
 	ssize_t cnt = libusb_get_device_list (0, &devs); //get the list of devices
 	if (cnt < 0)
 	{
 		ROS_ERROR("No device on USB");
-		return 0;
+		return;
 	}
 	
 	int nr_mot(0);
@@ -37,7 +52,7 @@ libusb_device_handle *openAux(int index = 0)
 				if ((libusb_open (devs[i], &dev) != 0) || (dev == 0))
 				{
 					ROS_ERROR_STREAM("Cannot open aux " << index);
-					return 0;
+					return;
 				}
 				// Claim the aux
 				libusb_claim_interface (dev, 0);
@@ -49,15 +64,13 @@ libusb_device_handle *openAux(int index = 0)
 	}
 
 	libusb_free_device_list (devs, 1);  // free the list, unref the devices in it
-
-	return dev;
 }
 
 
-void publishState(libusb_device_handle *dev)
+void publishState(void)
 {
 	uint8_t buf[10];
-	int ret = libusb_control_transfer(dev, 0xC0, 0x32, 0x0, 0x0, buf, 10, 0);
+	const int ret = libusb_control_transfer(dev, 0xC0, 0x32, 0x0, 0x0, buf, 10, 0);
 	if (ret != 10)
 	{
 		ROS_ERROR_STREAM("Error in accelerometer reading, libusb_control_transfer returned " << ret);
@@ -76,49 +89,54 @@ void publishState(libusb_device_handle *dev)
 	
 	// publish IMU
 	sensor_msgs::Imu imu_msg;
-	imu_msg.header.stamp = ros::Time::now();
-	imu_msg.linear_acceleration.x = (double(accelerometer_x)/FREENECT_COUNTS_PER_G)*GRAVITY;
-	imu_msg.linear_acceleration.y = (double(accelerometer_y)/FREENECT_COUNTS_PER_G)*GRAVITY;
-	imu_msg.linear_acceleration.z = (double(accelerometer_z)/FREENECT_COUNTS_PER_G)*GRAVITY;
-	imu_msg.linear_acceleration_covariance[0] = imu_msg.linear_acceleration_covariance[4]
-		= imu_msg.linear_acceleration_covariance[8] = 0.01; // @todo - what should these be?
-	imu_msg.angular_velocity_covariance[0] = -1; // indicates angular velocity not provided
-	imu_msg.orientation_covariance[0] = -1; // indicates orientation not provided
 	if (pub_imu.getNumSubscribers() > 0)
+	{
+		imu_msg.header.stamp = ros::Time::now();
+		imu_msg.linear_acceleration.x = (double(accelerometer_x)/FREENECT_COUNTS_PER_G)*GRAVITY;
+		imu_msg.linear_acceleration.y = (double(accelerometer_y)/FREENECT_COUNTS_PER_G)*GRAVITY;
+		imu_msg.linear_acceleration.z = (double(accelerometer_z)/FREENECT_COUNTS_PER_G)*GRAVITY;
+		imu_msg.linear_acceleration_covariance[0] = imu_msg.linear_acceleration_covariance[4]
+			= imu_msg.linear_acceleration_covariance[8] = 0.01; // @todo - what should these be?
+		imu_msg.angular_velocity_covariance[0] = -1; // indicates angular velocity not provided
+		imu_msg.orientation_covariance[0] = -1; // indicates orientation not provided
 		pub_imu.publish(imu_msg);
+	}
 	
-	// publish tilt angle
-	// TODO
+	// publish tilt angle and status
+	if (pub_tilt_angle.getNumSubscribers() > 0)
+		pub_tilt_angle.publish(double(tilt_angle) / 2.);
+	if (pub_tilt_status.getNumSubscribers() > 0)
+		pub_tilt_status.publish(tilt_status);
 }
 
-/*
-double freenect_get_tilt_degs(freenect_raw_device_state *state)
-{
-	return ((double)state->tilt_angle) / 2.;
-}
 
-int freenect_set_tilt_degs(libusb_device_handle *dev, double angle)
+void setTiltAngle(const std_msgs::Float64 angleMsg)
 {
-	int ret;
 	uint8_t empty[0x1];
+	double angle(angleMsg.data);
 
 	angle = (angle<MIN_TILT_ANGLE) ? MIN_TILT_ANGLE : ((angle>MAX_TILT_ANGLE) ? MAX_TILT_ANGLE : angle);
 	angle = angle * 2;
-
-	ret = fnusb_control(&dev->usb_aux, 0x40, 0x31, (uint16_t)angle, 0x0, empty, 0x0);
-	return ret;
+	const int ret = libusb_control_transfer(dev, 0x40, 0x31, (uint16_t)angle, 0x0, empty, 0x0, 0);
+	if (ret != 0)
+	{
+		ROS_ERROR_STREAM("Error in setting tilt angle, libusb_control_transfer returned " << ret);
+		ros::shutdown();
+	}
 }
 
-int freenect_set_led(libusb_device_handle *dev, freenect_led_options option)
+void setLedOption(const std_msgs::UInt16 optionMsg)
 {
-	int ret;
 	uint8_t empty[0x1];
-	ret = fnusb_control(&dev->usb_aux, 0x40, 0x06, (uint16_t)option, 0x0, empty, 0x0);
-	return ret;
+	const uint16_t option(optionMsg.data);
+	
+	const int ret = libusb_control_transfer(dev, 0x40, 0x06, (uint16_t)option, 0x0, empty, 0x0, 0);
+	if (ret != 0)
+	{
+		ROS_ERROR_STREAM("Error in setting LED options, libusb_control_transfer returned " << ret);
+		ros::shutdown();
+	}
 }
-*/
-
-
 
 
 int main(int argc, char* argv[])
@@ -130,8 +148,8 @@ int main(int argc, char* argv[])
 		return 1;
 	}
 	
-	libusb_device_handle *aux = openAux();
-	if (!aux)
+	openAuxDevice();
+	if (!dev)
 	{
 		ROS_ERROR_STREAM("No valid aux device found");
 		libusb_exit(0);
@@ -142,10 +160,16 @@ int main(int argc, char* argv[])
 	ros::NodeHandle n;
 	
 	pub_imu = n.advertise<sensor_msgs::Imu>("imu", 15);
+	pub_tilt_angle = n.advertise<std_msgs::Float64>("cur_tilt_angle", 15);
+	pub_tilt_status = n.advertise<std_msgs::UInt8>("cur_tilt_status", 15);
+	
+	sub_tilt_angle = n.subscribe("tilt_angle", 1, setTiltAngle);
+	sub_led_option = n.subscribe("led_option", 1, setLedOption);
+	 
 	while (ros::ok())
 	{
 		ros::spinOnce();
-		publishState(aux);
+		publishState();
 	}
 	
 	libusb_exit(0);

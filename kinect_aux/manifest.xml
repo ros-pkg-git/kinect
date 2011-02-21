@@ -9,6 +9,7 @@
   <review status="unreviewed" notes=""/>
   <url>http://ros.org/wiki/kinect_aux</url>
   <depend package="roscpp"/>
+  <depend package="std_msgs"/>
   <depend package="sensor_msgs"/>
 
 </package>
