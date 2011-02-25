@@ -104,9 +104,17 @@ void publishState(void)
 	
 	// publish tilt angle and status
 	if (pub_tilt_angle.getNumSubscribers() > 0)
-		pub_tilt_angle.publish(double(tilt_angle) / 2.);
+	{
+		std_msgs::Float64 tilt_angle_msg;
+		tilt_angle_msg.data = double(tilt_angle) / 2.;
+		pub_tilt_angle.publish(tilt_angle_msg);
+	}
 	if (pub_tilt_status.getNumSubscribers() > 0)
-		pub_tilt_status.publish(tilt_status);
+	{
+		std_msgs::UInt8 tilt_status_msg;
+		tilt_status_msg.data = tilt_status;
+		pub_tilt_status.publish(tilt_status_msg);
+	}
 }
 
 
